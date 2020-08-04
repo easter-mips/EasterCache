@@ -147,7 +147,7 @@ class DCache(config: CacheConfig) extends Module {
   val validMem = RegInit(VecInit(List.fill(config.wayNum)(0.U(config.lineNums.W))))
   // val dirtyMem = initLineState(0.U(1.W))
   val dirtyMem = RegInit(VecInit(List.fill(config.wayNum)(0.U(config.lineNums.W))))
-  val lruMem = RegInit(VecInit(List.fill(config.lineNums)(0.U(getLruWidth(config.wayNum).W))))
+//  val lruMem = RegInit(VecInit(List.fill(config.lineNums)(0.U(getLruWidth(config.wayNum).W))))
 
   val fuse: (UInt, UInt) => UInt = (wid, sid) => Cat(wid, sid)
 
@@ -247,24 +247,33 @@ class DCache(config: CacheConfig) extends Module {
   io.dWait := io.enable && !hit
 
   // lru fsm
-  val lruFsm = Module(new LruFsm(config.wayNum))
-  lruFsm.io.current := lruMem(dSet)
+//  val lruFsm = Module(new LruFsm(config.wayNum))
+//  lruFsm.io.current := lruMem(dSet)
+
+  val lruMem = Module(new LruMem(config))
+  lruMem.io.setAddr := dSet
+  lruMem.io.visit := 0.U
+  lruMem.io.visitValid := hit
 
   val refillSel = Wire(UInt(config.wayNumWidth.W))
-  refillSel := lruFsm.io.sel
+  refillSel := lruMem.io.waySel
 
-  lruFsm.io.visit := Mux(hit, hitWayId, refillSel)
+//  lruFsm.io.visit := Mux(hit, hitWayId, refillSel)
 
   when (io.enable && !axiWritingBack && !refilling) {
     when (hitAxiDirect) {
       oState := osKnown
       oKnownData := readWord(io.axiReadIn.rdata, io.dAddr, io.dSize)
       rDirty := Mux(io.wEn, 1.U, rDirty)
+      // update lru
+      lruMem.io.visit := rRefillSel
     } .elsewhen(hitAxiBuf) {
       oState := osKnown
       oKnownData := readWord(rBuf(dBank), io.dAddr, io.dSize)
       rDirty := Mux(io.wEn, 1.U, rDirty)
       rBuf(dBank) := writeWord(rBuf(dBank), io.wStrb, io.wData)
+      // update lru
+      lruMem.io.visit := rRefillSel
     } .elsewhen(hitWay) {
       oState := osRead
       oReadWay := hitWayId
@@ -276,7 +285,8 @@ class DCache(config: CacheConfig) extends Module {
       // update control
 //      dirtyMem(hitWayId)(dSet) := Mux(io.wEn, 1.U, rDirty)
       dirtyMem(hitWayId) := Mux(io.wEn, setBit(dirtyMem(hitWayId), dSet), dirtyMem(hitWayId))
-      lruMem(dSet) := lruFsm.io.next
+//      lruMem(dSet) := lruFsm.io.next
+      lruMem.io.visit := hitWayId
     } .elsewhen(axiReady) {
       // miss
       rState := rsAddr
@@ -288,10 +298,10 @@ class DCache(config: CacheConfig) extends Module {
 
       wNeedWB := validMem(refillSel)(dSet)
       wState := Mux(validMem(refillSel)(dSet), wsRead, wsIdle)
-      wAddr := Cat(tagMem(fuse(rRefillSel, dSet)), Cat(dSet, 0.U(5.W)))
+      wAddr := Cat(tagMem(fuse(refillSel, dSet)), Cat(dSet, 0.U(5.W)))
 
       // update lru
-      lruMem(dSet) := lruFsm.io.next
+//      lruMem(dSet) := lruFsm.io.next
     }
   }
 
