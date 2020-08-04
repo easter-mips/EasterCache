@@ -140,7 +140,7 @@ class DCache(config: CacheConfig) extends Module {
   val osNone :: osKnown :: osRead :: Nil = Enum(3)
 
   // control state
-  def initLineState(x: UInt) = RegInit(VecInit(List.fill(config.wayNum)(VecInit(List.fill(config.lineNums)(x)))))
+//  def initLineState(x: UInt) = RegInit(VecInit(List.fill(config.wayNum)(VecInit(List.fill(config.lineNums)(x)))))
   // val tagMem = initLineState(0.U(config.tagWidth.W))
   val tagMem = Mem(config.wayNum * config.lineNums, UInt(config.tagWidth.W))
   // val validMem = initLineState(0.U(1.W))
@@ -149,7 +149,7 @@ class DCache(config: CacheConfig) extends Module {
   val dirtyMem = RegInit(VecInit(List.fill(config.wayNum)(0.U(config.lineNums.W))))
   val lruMem = RegInit(VecInit(List.fill(config.lineNums)(0.U(getLruWidth(config.wayNum).W))))
 
-  val fuse: (UInt, UInt) => UInt = (wid, sid) => (wid << config.setWidth).asUInt | sid
+  val fuse: (UInt, UInt) => UInt = (wid, sid) => Cat(wid, sid)
 
   // axi states
   val rState = RegInit(rsIdle)
@@ -222,7 +222,7 @@ class DCache(config: CacheConfig) extends Module {
 
   // hit handle
   val hitWays = Wire(UInt(config.wayNum.W))
-  hitWays := VecInit((0 until config.wayNum).map(i => validMem(i)(dSet) && (tagMem(fuse(i.U(config.wayNumWidth), dSet)) === dTag))).asUInt
+  hitWays := VecInit((0 until config.wayNum).map(i => validMem(i)(dSet) && (tagMem(fuse(i.U(config.wayNumWidth.W), dSet)) === dTag))).asUInt
   val hitWay = Wire(Bool())
   hitWay := hitWays.orR()
   val hitWayId = Wire(UInt(config.wayNumWidth.W))
