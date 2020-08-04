@@ -102,7 +102,7 @@ class DCache(config: CacheConfig) extends Module {
     val bankDataIn = Input(Vec(config.wayNum, Vec(lineBankNum, UInt(32.W))))
     val bankDataOut = Output(Vec(lineBankNum, UInt(32.W)))
     val bankWEn = Output(Vec(config.wayNum, Vec(lineBankNum, UInt(4.W))))
-    val bankSetAddr = Output(UInt(32.W))
+    val bankSetAddr = Output(UInt(config.setWidth.W))
     // axi interface
     val axiReadAddrOut = Output(new AxiReadAddrOut)
     val axiReadAddrIn = Input(new AxiReadAddrIn)
