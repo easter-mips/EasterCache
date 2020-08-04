@@ -88,6 +88,20 @@ class DCache(config: CacheConfig) extends Module {
     rData
   }
 
+  def getMask(w: Int, n: UInt): UInt = {
+    (1.U << n).asUInt.pad(w)
+  }
+
+  def setBit(x: UInt, n: UInt): UInt = {
+    val w = x.getWidth
+    x | getMask(w, n)
+  }
+
+  def clearBit(x: UInt, n: UInt): UInt = {
+    val m: UInt = getMask(x.getWidth, n)
+    x & (~m).asUInt
+  }
+
   val io = IO(new Bundle {
     // cpu interface
     val enable = Input(Bool())
@@ -127,10 +141,15 @@ class DCache(config: CacheConfig) extends Module {
 
   // control state
   def initLineState(x: UInt) = RegInit(VecInit(List.fill(config.wayNum)(VecInit(List.fill(config.lineNums)(x)))))
-  val tagMem = initLineState(0.U(config.tagWidth.W))
-  val validMem = initLineState(0.U(1.W))
-  val dirtyMem = initLineState(0.U(1.W))
+  // val tagMem = initLineState(0.U(config.tagWidth.W))
+  val tagMem = Mem(config.wayNum * config.lineNums, UInt(config.tagWidth.W))
+  // val validMem = initLineState(0.U(1.W))
+  val validMem = RegInit(VecInit(List.fill(config.wayNum)(0.U(config.lineNums.W))))
+  // val dirtyMem = initLineState(0.U(1.W))
+  val dirtyMem = RegInit(VecInit(List.fill(config.wayNum)(0.U(config.lineNums.W))))
   val lruMem = RegInit(VecInit(List.fill(config.lineNums)(0.U(getLruWidth(config.wayNum).W))))
+
+  val fuse: (UInt, UInt) => UInt = (wid, sid) => (wid << config.setWidth).asUInt | sid
 
   // axi states
   val rState = RegInit(rsIdle)
@@ -203,7 +222,7 @@ class DCache(config: CacheConfig) extends Module {
 
   // hit handle
   val hitWays = Wire(UInt(config.wayNum.W))
-  hitWays := VecInit((0 until config.wayNum).map(i => validMem(i)(dSet).asBool && (tagMem(i)(dSet) === dTag))).asUInt
+  hitWays := VecInit((0 until config.wayNum).map(i => validMem(i)(dSet) && (tagMem(fuse(i.U(config.wayNumWidth), dSet)) === dTag))).asUInt
   val hitWay = Wire(Bool())
   hitWay := hitWays.orR()
   val hitWayId = Wire(UInt(config.wayNumWidth.W))
@@ -255,7 +274,8 @@ class DCache(config: CacheConfig) extends Module {
       // output bank write enable
       io.bankWEn(hitWayId)(dBank) := io.wStrb
       // update control
-      dirtyMem(hitWayId)(dSet) := Mux(io.wEn, 1.U, rDirty)
+//      dirtyMem(hitWayId)(dSet) := Mux(io.wEn, 1.U, rDirty)
+      dirtyMem(hitWayId) := Mux(io.wEn, setBit(dirtyMem(hitWayId), dSet), dirtyMem(hitWayId))
       lruMem(dSet) := lruFsm.io.next
     } .elsewhen(axiReady) {
       // miss
@@ -267,8 +287,8 @@ class DCache(config: CacheConfig) extends Module {
       rRefillSel := refillSel
 
       wNeedWB := validMem(refillSel)(dSet)
-      wState := Mux(validMem(refillSel)(dSet).asBool(), wsRead, wsIdle)
-      wAddr := Cat(tagMem(rRefillSel)(dSet), Cat(dSet, 0.U(5.W)))
+      wState := Mux(validMem(refillSel)(dSet), wsRead, wsIdle)
+      wAddr := Cat(tagMem(fuse(rRefillSel, dSet)), Cat(dSet, 0.U(5.W)))
 
       // update lru
       lruMem(dSet) := lruFsm.io.next
@@ -315,9 +335,15 @@ class DCache(config: CacheConfig) extends Module {
       // output bank write enable
       io.bankWEn(rRefillSel) := VecInit(List.fill(lineBankNum)("hf".U))
       // update control state
-      tagMem(rRefillSel)(config.sliceSet(rAddr)) := config.sliceTag(rAddr)
-      validMem(rRefillSel)(config.sliceSet(rAddr)) := 1.U
-      dirtyMem(rRefillSel)(config.sliceSet(rAddr)) := rDirty
+      tagMem(fuse(rRefillSel, config.sliceSet(rAddr))) := config.sliceTag(rAddr)
+//      validMem(rRefillSel)(config.sliceSet(rAddr)) := 1.U
+      validMem(rRefillSel) := setBit(validMem(rRefillSel), config.sliceSet(rAddr))
+//      dirtyMem(rRefillSel)(config.sliceSet(rAddr)) := rDirty
+      dirtyMem(rRefillSel) := Mux(
+        rDirty,
+        setBit(dirtyMem(rRefillSel), config.sliceSet(rAddr)),
+        clearBit(dirtyMem(rRefillSel), config.sliceSet(rAddr))
+      )
 
       rState := rsIdle
     }
