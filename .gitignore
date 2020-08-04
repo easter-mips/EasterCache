@@ -340,3 +340,6 @@ hs_err_pid*
 
 gen/
 
+.bloop/
+.metals/
+
