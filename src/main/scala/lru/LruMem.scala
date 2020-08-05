@@ -1,9 +1,8 @@
-package dcache
+package lru
 
 import chisel3._
-import chisel3.util._
 import chisel3.stage.{ChiselGeneratorAnnotation, ChiselStage}
-import scala.collection.immutable.List
+import dcache.{CacheConfig, getLruWidth}
 
 class LruMem(val config: CacheConfig) extends Module {
   def getMask(w: Int, n: UInt): UInt = {

@@ -1,6 +1,7 @@
-package dcache
+package lru
 
-import chisel3._
+import chisel3.iotesters
+import dcache.CacheConfig
 
 object LruMemMain extends App {
   println("LRU FSM tests begin")

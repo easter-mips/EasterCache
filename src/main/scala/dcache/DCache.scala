@@ -4,6 +4,8 @@ package dcache
 import chisel3._
 import chisel3.util._
 import chisel3.stage.{ChiselGeneratorAnnotation, ChiselStage}
+import lru.LruMem
+
 import scala.collection.immutable.List
 
 class AxiReadAddrOut extends Bundle {
@@ -226,8 +228,6 @@ class DCache(config: CacheConfig) extends Module {
   val hitWay = Wire(Bool())
   hitWay := hitWays.orR()
   val hitWayId = Wire(UInt(config.wayNumWidth.W))
-//  hitWayId := (0 until config.wayNum).map(i => Mux(hitWays(i), i.U(config.wayNumWidth), 0.U))
-//    .foldLeft(0.U)((acc, x) => acc | x)
   hitWayId := PriorityEncoder(hitWays)
 
   val hitAxiBuf = Wire(Bool())

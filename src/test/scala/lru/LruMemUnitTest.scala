@@ -1,7 +1,6 @@
-package dcache
+package lru
 
-import chisel3.iotesters
-import chisel3.iotesters.{PeekPokeTester}
+import chisel3.iotesters.PeekPokeTester
 
 class LruMemUnitTester(c: LruMem) extends PeekPokeTester(c) {
   /**
