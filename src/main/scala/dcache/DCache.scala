@@ -78,6 +78,9 @@ class DCache(config: CacheConfig) extends Module {
     val wStrb = Input(UInt(4.W))
     val dWait = Output(Bool())
     val rData = Output(UInt(32.W))
+    // statistic interface
+    val missCount = Output(UInt(32.W))
+    val hitCount = Output(UInt(32.W))
     // bank data interface
     val bankDataIn = Input(Vec(config.wayNum, Vec(lineBankNum, UInt(32.W))))
     val bankDataOut = Output(Vec(lineBankNum, UInt(32.W)))
@@ -106,15 +109,20 @@ class DCache(config: CacheConfig) extends Module {
   val osNone :: osKnown :: osRead :: Nil = Enum(3)
 
   // control state
-//  def initLineState(x: UInt) = RegInit(VecInit(List.fill(config.wayNum)(VecInit(List.fill(config.lineNums)(x)))))
-  // val tagMem = initLineState(0.U(config.tagWidth.W))
   val tagMem = Mem(config.wayNum * config.lineNums, UInt(config.tagWidth.W))
-  // val validMem = initLineState(0.U(1.W))
   val validMem = RegInit(VecInit(List.fill(config.wayNum)(0.U(config.lineNums.W))))
-  // val dirtyMem = initLineState(0.U(1.W))
   val dirtyMem = RegInit(VecInit(List.fill(config.wayNum)(0.U(config.lineNums.W))))
-//  val lruMem = RegInit(VecInit(List.fill(config.lineNums)(0.U(getLruWidth(config.wayNum).W))))
 
+  // statistics
+  val hitCount = RegInit(0.U(32.W))
+  val missCount = RegInit(0.U(32.W))
+  val prevAddr = RegInit(0.U(32.W)) // du not count stalled requests multiple times
+
+  prevAddr := Mux(io.enable, io.dAddr, prevAddr)
+  io.hitCount := hitCount
+  io.missCount := missCount
+
+  // helper function
   val fuse: (UInt, UInt) => UInt = (wid, sid) => Cat(wid, sid)
 
   // axi states
@@ -210,9 +218,13 @@ class DCache(config: CacheConfig) extends Module {
   hit := !axiWritingBack && !refilling && (hitAxiDirect || hitAxiBuf || hitWay)
   io.dWait := io.enable && !hit
 
-  // lru fsm
-//  val lruFsm = Module(new LruFsm(config.wayNum))
-//  lruFsm.io.current := lruMem(dSet)
+  // count miss & hit
+  val isMiss = Wire(Bool())
+  isMiss := io.dAddr =/= prevAddr && io.enable && !hit
+  val isHit = Wire(Bool())
+  isHit := io.dAddr =/= prevAddr && io.enable && hit
+  missCount := Mux(isMiss, missCount + 1.U, missCount)
+  hitCount := Mux(isHit, hitCount + 1.U, hitCount)
 
   val lruMem = Module(new LruMem(config))
   lruMem.io.setAddr := dSet
@@ -222,7 +234,27 @@ class DCache(config: CacheConfig) extends Module {
   val refillSel = Wire(UInt(config.wayNumWidth.W))
   refillSel := lruMem.io.waySel
 
-//  lruFsm.io.visit := Mux(hit, hitWayId, refillSel)
+  // will not synthesize: event logging
+  when (io.enable) {
+    printf(s"requested address: ${io.dAddr}")
+    when (axiWritingBack) {
+      printf("stall reason: hitted line is being written back")
+    } .elsewhen(refilling) {
+      printf("stall reason: cache is refilling data")
+    } .elsewhen(hitAxiDirect) {
+      printf("hit axi direct")
+    } .elsewhen(hitAxiBuf) {
+      printf("hit axi read buffer")
+    } .elsewhen(hitWay) {
+      printf(s"hit bank data in way ${hitWayId}")
+    } .otherwise {
+      when (axiReady) {
+        printf("miss, axi ready")
+      } .otherwise {
+        printf("miss, axi not ready")
+      }
+    }
+  }
 
   when (io.enable && !axiWritingBack && !refilling) {
     when (hitAxiDirect) {
@@ -247,9 +279,7 @@ class DCache(config: CacheConfig) extends Module {
       // output bank write enable
       io.bankWEn(hitWayId)(dBank) := io.wStrb
       // update control
-//      dirtyMem(hitWayId)(dSet) := Mux(io.wEn, 1.U, rDirty)
       dirtyMem(hitWayId) := Mux(io.wEn, setBit(dirtyMem(hitWayId), dSet), dirtyMem(hitWayId))
-//      lruMem(dSet) := lruFsm.io.next
       lruMem.io.visit := hitWayId
     } .elsewhen(axiReady) {
       // miss
@@ -263,9 +293,6 @@ class DCache(config: CacheConfig) extends Module {
       wNeedWB := validMem(refillSel)(dSet)
       wState := Mux(validMem(refillSel)(dSet), wsRead, wsIdle)
       wAddr := Cat(tagMem(fuse(refillSel, dSet)), Cat(dSet, 0.U(5.W)))
-
-      // update lru
-//      lruMem(dSet) := lruFsm.io.next
     }
   }
 
@@ -310,9 +337,7 @@ class DCache(config: CacheConfig) extends Module {
       io.bankWEn(rRefillSel) := VecInit(List.fill(lineBankNum)("hf".U))
       // update control state
       tagMem(fuse(rRefillSel, config.sliceSet(rAddr))) := config.sliceTag(rAddr)
-//      validMem(rRefillSel)(config.sliceSet(rAddr)) := 1.U
       validMem(rRefillSel) := setBit(validMem(rRefillSel), config.sliceSet(rAddr))
-//      dirtyMem(rRefillSel)(config.sliceSet(rAddr)) := rDirty
       dirtyMem(rRefillSel) := Mux(
         rDirty,
         setBit(dirtyMem(rRefillSel), config.sliceSet(rAddr)),
