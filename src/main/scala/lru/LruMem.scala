@@ -2,7 +2,9 @@ package lru
 
 import chisel3._
 import chisel3.stage.{ChiselGeneratorAnnotation, ChiselStage}
-import dcache.{CacheConfig, getLruWidth}
+import dcache.{getLruWidth}
+
+import types._
 
 class LruMem(val config: CacheConfig) extends Module {
   def getMask(w: Int, n: UInt): UInt = {
