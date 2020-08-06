@@ -13,17 +13,38 @@ class DCache(config: CacheConfig) extends Module {
   val lineBankNum = 8
   val bankSelWidth = 3 // 3 = log2(8)
 
+  /**
+    * Expand wstrb to bit-wise masks.
+    * Example:
+    *   expandStrb("b0010".U) === "h00_00_ff_00".U
+    * @param wstrb
+    * @return corresponding bitwise mask of wstrb
+    */
   def expandStrb(wstrb: UInt): UInt = {
     val strbW = wstrb.getWidth
     (3 to 0 by -1).map(i => Mux(wstrb(i), "hff".U(8.W), 0.U(8.W))).foldLeft(0.U(1.W))((acc, x) => Cat(acc, x))(strbW * 8 - 1, 0)
   }
 
+  /**
+    * Change input 32-bit word according to wstrb and wdata
+    * @param word the input word
+    * @param wstrb write mask
+    * @param wdata write data
+    * @return modified word
+    */
   def writeWord(word: UInt, wstrb: UInt, wdata: UInt): UInt = {
     val wMask = Wire(UInt(32.W))
     wMask := expandStrb(wstrb)
     (wMask & wdata) | ((~wMask) & word)
   }
 
+  /**
+    * Get output based on address and read size
+    * @param word
+    * @param dAddr
+    * @param dSize
+    * @return
+    */
   def readWord(word: UInt, dAddr: UInt, dSize: UInt): UInt = {
     val rData = Wire(UInt(32.W))
     rData := 0.U
@@ -54,15 +75,33 @@ class DCache(config: CacheConfig) extends Module {
     rData
   }
 
+  /**
+    * Get a mask with its n-th bit being 1 of width w
+    * @param w
+    * @param n
+    * @return
+    */
   def getMask(w: Int, n: UInt): UInt = {
     (1.U << n).asUInt.pad(w)
   }
 
+  /**
+    * Set the n-th bit of x to 1
+    * @param x
+    * @param n
+    * @return
+    */
   def setBit(x: UInt, n: UInt): UInt = {
     val w = x.getWidth
     x | getMask(w, n)
   }
 
+  /**
+    * Set the n-th bit of x to 0
+    * @param x
+    * @param n
+    * @return
+    */
   def clearBit(x: UInt, n: UInt): UInt = {
     val m: UInt = getMask(x.getWidth, n)
     x & (~m).asUInt
@@ -109,6 +148,11 @@ class DCache(config: CacheConfig) extends Module {
   val osNone :: osKnown :: osRead :: Nil = Enum(3)
 
   // control state
+  /**
+    * tag memory
+    * Size: (way number * line number per way) * tag width
+    * Address width: way number width + set width
+    */
   val tagMem = Mem(config.wayNum * config.lineNums, UInt(config.tagWidth.W))
   val validMem = RegInit(VecInit(List.fill(config.wayNum)(0.U(config.lineNums.W))))
   val dirtyMem = RegInit(VecInit(List.fill(config.wayNum)(0.U(config.lineNums.W))))
@@ -116,28 +160,46 @@ class DCache(config: CacheConfig) extends Module {
   // statistics
   val hitCount = RegInit(0.U(32.W))
   val missCount = RegInit(0.U(32.W))
-  val prevAddr = RegInit(0.U(32.W)) // du not count stalled requests multiple times
+  val prevAddr = RegInit(0.U(32.W)) // do not count stalled requests multiple times
 
   prevAddr := Mux(io.enable, io.dAddr, prevAddr)
   io.hitCount := hitCount
   io.missCount := missCount
 
   // helper function
+  // Example:
+  /**
+    * fuse way number and set address into one UInt to address the mem
+    * Example:
+    *   To address the tag of set 10 at way 2, use:
+    *     tagMem(fuse(2.U, 10.U))
+    */
   val fuse: (UInt, UInt) => UInt = (wid, sid) => Cat(wid, sid)
 
   // axi states
   val rState = RegInit(rsIdle)
   val wState = RegInit(wsIdle)
 
+  // axi read registers
+  // the requested axi addr
   val rAddr = RegInit(0.U(32.W))
+  // next bank to read from axi
   val rBank = RegInit(0.U(3.W))
+  // read buffer
   val rBuf = RegInit(VecInit(List.fill(lineBankNum)(0.U(32.W))))
+  // valid indicator of buffer
   val rValid = RegInit(VecInit(List.fill(lineBankNum)(false.B)))
+  // the way to refill
   val rRefillSel = RegInit(0.U(config.wayNumWidth.W))
+  // whether read out data is dirty
   val rDirty = RegInit(false.B)
 
+  // axi write registers
+  // the address to write back
   val wAddr = RegInit(0.U(32.W))
+  // write buffer
   val wBuf = RegInit(VecInit(List.fill(lineBankNum)(0.U(32.W))))
+  // the swapped out line needs to be written back
   val wNeedWB = RegInit(false.B)
 
   // wire defs
