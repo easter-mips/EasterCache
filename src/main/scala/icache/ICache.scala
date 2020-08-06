@@ -5,6 +5,7 @@ import chisel3.util._
 import chisel3.stage.{ChiselGeneratorAnnotation, ChiselStage}
 
 import lru.LruMem
+import mem.BlockMem
 import types._
 
 class ICache(val config: CacheConfig) extends Module {
@@ -24,13 +25,42 @@ class ICache(val config: CacheConfig) extends Module {
   })
 
   // helper function
-  val fuse = (wayId: UInt, setAddr: UInt) => Cat(wayId, setAddr)
+  val fuse = (wayId: UInt, setAddr: UInt) =>
+    Cat(
+      wayId.pad(config.wayNumWidth),
+      setAddr.pad(config.setWidth)
+    )
 
-  val bankMem = SyncReadMem(config.wayNum * config.lineNums, Vec(8, UInt(32.W)))
+  // data mem
+  val dataMem = Module(new BlockMem(new MemConfig(
+    depth = config.wayNum * config.lineNums,
+    lineSize = 8))
+  )
+
+  // control state
+  val validMem = VecInit(Seq.fill(config.wayNum){ 0.U(config.lineNums.W) })
+  val tagMem = Mem(config.wayNum * config.lineNums, UInt(config.tagWidth.W))
+  val lruMem = Module(new LruMem(config))
+
+  // axi state
+  val rIdle :: rAddressing :: rRead :: rRefill :: Nil = Enum(4)
+  val rState = RegInit(rIdle)
+  val rAddr = RegInit(0.U(32.W))
+  val rBank = RegInit(0.U(3.W))
+  val rBuf = Mem(8, UInt(32.W))
+  val rValid = RegInit(0.U(8.W))
+
+  // wire defs
+  val iTag = Wire(UInt(config.tagWidth.W))
+  val iSet = Wire(UInt(config.setWidth.W))
+  val iBank = Wire(UInt(3.W))
+  iTag := config.sliceTag(io.iAddr)
+  iSet := config.sliceSet(io.iAddr)
+  iBank := config.sliceBank(io.iAddr)
 
   // defualt output
-  io.inst1 := bankMem.read(0.U(9), true.B)(0)
-  io.inst2 := bankMem.read(1.U(9), true.B)(1)
+  io.inst1 := 0.U
+  io.inst2 := 0.U
   io.inst1Valid := false.B
   io.inst2Valid := true.B
   io.axiReadAddrOut.arid := 0.U
