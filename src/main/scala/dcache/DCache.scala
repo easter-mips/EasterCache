@@ -236,22 +236,22 @@ class DCache(config: CacheConfig) extends Module {
 
   // will not synthesize: event logging
   when (io.enable) {
-    printf(s"requested address: ${io.dAddr}")
+    printf(p"requested address: ${io.dAddr}\n")
     when (axiWritingBack) {
-      printf("stall reason: hitted line is being written back")
+      printf("stall reason: hitted line is being written back\n")
     } .elsewhen(refilling) {
-      printf("stall reason: cache is refilling data")
+      printf("stall reason: cache is refilling data\n")
     } .elsewhen(hitAxiDirect) {
-      printf("hit axi direct")
+      printf("hit axi direct\n")
     } .elsewhen(hitAxiBuf) {
-      printf("hit axi read buffer")
+      printf("hit axi read buffer\n")
     } .elsewhen(hitWay) {
-      printf(s"hit bank data in way ${hitWayId}")
+      printf(p"hit bank data in way ${hitWayId}\n")
     } .otherwise {
       when (axiReady) {
-        printf("miss, axi ready")
+        printf("miss, axi ready\n")
       } .otherwise {
-        printf("miss, axi not ready")
+        printf("miss, axi not ready\n")
       }
     }
   }

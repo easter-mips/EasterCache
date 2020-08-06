@@ -29,8 +29,8 @@ class ICache(val config: CacheConfig) extends Module {
   val bankMem = SyncReadMem(config.wayNum * config.lineNums, Vec(8, UInt(32.W)))
 
   // defualt output
-  io.inst1 := bankMem(0)(1)
-  io.inst2 := bankMem(1)(1)
+  io.inst1 := bankMem.read(0.U(9), true.B)(0)
+  io.inst2 := bankMem.read(1.U(9), true.B)(1)
   io.inst1Valid := false.B
   io.inst2Valid := true.B
   io.axiReadAddrOut.arid := 0.U
