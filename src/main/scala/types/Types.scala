@@ -41,3 +41,8 @@ class CacheConfig(val wayNum: Int, val setWidth: Int) {
   def sliceBank(x: UInt): UInt = x(4, 2)
   def sliceLineAddr(x: UInt): UInt = x(31, 5)
 }
+
+class MemConfig(val depth: Int, val lineSize: Int) {
+  val addrWidth = log2Ceil(depth)
+  val bankWidth = 32
+}
