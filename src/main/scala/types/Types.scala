@@ -36,6 +36,9 @@ class CacheConfig(val wayNum: Int, val setWidth: Int) {
   val lineAddrWidth = 32 - 5
   val lineNums = List.fill(setWidth)(2).foldLeft(1)(_ * _)
 
+  val lineBankNum = 8
+  val bankNumWidth = log2Ceil(lineBankNum)
+
   def sliceTag(x: UInt): UInt = x(31, 32 - tagWidth)
   def sliceSet(x: UInt): UInt = x(31 - tagWidth, 32 - tagWidth - setWidth)
   def sliceBank(x: UInt): UInt = x(4, 2)
