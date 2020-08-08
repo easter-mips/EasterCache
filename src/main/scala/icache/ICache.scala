@@ -50,12 +50,9 @@ class ICache(val config: CacheConfig) extends Module {
     m.io.addr := dataMemAddr
     m.io.dataIn := wDataMem
   }
-  dataMem.indices.foreach { i =>
-    dataMem(i).io.wEn := i.U === rRefillWay && rState === rsRefill
-  }
 
   // control state
-  val validMem = VecInit(Seq.fill(config.wayNum){ 0.U(config.lineNums.W) })
+  val validMem = RegInit(VecInit.tabulate(config.wayNum) { _ => 0.U(config.lineNums.W) } )
   val tagMem = Mem(config.wayNum * config.lineNums, UInt(config.tagWidth.W))
   val lruMem = Module(new LruMem(config))
 
@@ -72,7 +69,7 @@ class ICache(val config: CacheConfig) extends Module {
   val osNone :: osKnown1 :: osKnown2 :: osRead :: Nil = Enum(4)
   val oState = RegInit(osNone)
   val oKnownInst1 = RegInit(0.U(32.W))
-  val oKnownInst2 = RegInit(1.U(32.W))
+  val oKnownInst2 = RegInit(0.U(32.W))
   val oReadWay = RegInit(0.U(config.wayNumWidth.W))
   val oReadBank = RegInit(0.U(config.bankNumWidth.W))
 
@@ -85,6 +82,8 @@ class ICache(val config: CacheConfig) extends Module {
   iBank := config.sliceBank(io.iAddr)
 
   // defualt output
+  io.inst1 := 0.U
+  io.inst2 := 0.U
   io.inst1Valid := false.B
   io.inst2Valid := false.B
   io.axiReadAddrOut.arid := 0.U
@@ -97,7 +96,11 @@ class ICache(val config: CacheConfig) extends Module {
 
   dataMemAddr := Mux(rState === rsRefill, config.sliceSet(rAddr), iSet)
   for (i <- 0 until config.lineBankNum) {
-    wDataMem := rBuf(i)
+    wDataMem(i) := rBuf(i)
+  }
+
+  dataMem.indices.foreach { i =>
+    dataMem(i).io.wEn := i.U === rRefillWay && rState === rsRefill
   }
 
   lruMem.io.setAddr := iSet
@@ -129,7 +132,7 @@ class ICache(val config: CacheConfig) extends Module {
   val hitWays = Wire(UInt(config.wayNum.W))
   hitWays := VecInit.tabulate(config.wayNum) { i =>
     tagMem(fuse(i.U(config.wayNumWidth.W), iSet)) === iTag && validMem(i.U(config.wayNumWidth.W))(iSet)
-  }
+  }.asUInt
   val hitWay = Wire(Bool())
   hitWay := hitWays.orR() && rState =/= rsRefill
   val hitWayId = Wire(UInt(config.wayNumWidth.W))
@@ -168,6 +171,7 @@ class ICache(val config: CacheConfig) extends Module {
       oKnownInst1 := rBuf(iBank)
       oKnownInst2 := rBuf(iBank + 1.U)
       lruMem.io.visit := rRefillWay
+      lruMem.io.visit := rRefillWay
     } .elsewhen (hitWay) {
       io.inst1Valid := true.B
       io.inst2Valid := iBank =/= 7.U
@@ -196,7 +200,7 @@ class ICache(val config: CacheConfig) extends Module {
     is (rsRead) {
       rState := Mux(io.axiReadIn.rlast && io.axiReadIn.rvalid, rsRefill, rsRead)
       rBuf(rBank) := io.axiReadIn.rdata
-      rValid(rBank) := io.axiReadIn.rvalid
+      rValid := Mux(io.axiReadIn.rvalid, setBit(rValid, rBank), rValid)
       rBank := Mux(io.axiReadIn.rvalid, rBank + 1.U, rBank)
     }
     is (rsRefill) {
