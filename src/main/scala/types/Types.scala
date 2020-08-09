@@ -30,6 +30,11 @@ class AxiReadIn extends Bundle {
   val rvalid = Bool()
 }
 
+class HitStats extends Bundle {
+  val hitCount = UInt(32.W)
+  val missCount = UInt(32.W)
+}
+
 class CacheConfig(val wayNum: Int, val setWidth: Int) {
   val tagWidth = 32 - 5 - setWidth
   val wayNumWidth = log2Ceil(wayNum)

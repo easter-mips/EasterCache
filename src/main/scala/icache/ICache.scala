@@ -22,6 +22,8 @@ class ICache(val config: CacheConfig) extends Module {
     val axiReadAddrIn = Input(new AxiReadAddrIn)
     val axiReadOut = Output(new AxiReadOut)
     val axiReadIn = Input(new AxiReadIn)
+    // hit stats
+    val hitStats = Output(new HitStats)
   })
 
   // helper functions
@@ -57,7 +59,9 @@ class ICache(val config: CacheConfig) extends Module {
   val lruMem = Module(new LruMem(config))
 
   // axi state
+  // axi state def
   val rsIdle :: rsAddressing :: rsRead :: rsRefill :: Nil = Enum(4)
+
   val rState = RegInit(rsIdle)
   val rAddr = RegInit(0.U(32.W))
   val rBank = RegInit(0.U(config.bankNumWidth.W))
@@ -72,6 +76,11 @@ class ICache(val config: CacheConfig) extends Module {
   val oKnownInst2 = RegInit(0.U(32.W))
   val oReadWay = RegInit(0.U(config.wayNumWidth.W))
   val oReadBank = RegInit(0.U(config.bankNumWidth.W))
+
+  // hit state
+  val hitCount = RegInit(0.U(32.W))
+  val missCount = RegInit(0.U(32.W))
+  val prevAddr = RegInit(0.U(32.W))
 
   // wire defs
   val iTag = Wire(UInt(config.tagWidth.W))
@@ -93,6 +102,8 @@ class ICache(val config: CacheConfig) extends Module {
   io.axiReadAddrOut.arsize := 2.U
   io.axiReadAddrOut.arburst := 2.U
   io.axiReadOut.rready := rState === rsRead
+  io.hitStats.hitCount := hitCount
+  io.hitStats.missCount := missCount
 
   dataMemAddr := Mux(rState === rsRefill, config.sliceSet(rAddr), iSet)
   for (i <- 0 until config.lineBankNum) {
@@ -106,6 +117,8 @@ class ICache(val config: CacheConfig) extends Module {
   lruMem.io.setAddr := iSet
   lruMem.io.visit := 0.U
   lruMem.io.visitValid := false.B
+
+  when (io.enable) { prevAddr := io.iAddr }
 
   // output handle
   switch (oState) {
@@ -150,6 +163,14 @@ class ICache(val config: CacheConfig) extends Module {
   invalidAddr := io.iAddr(1, 0) =/= 0.U
 
   lruMem.io.visitValid := hitAxiDirect || hitAxiBuf || hitWay
+
+  when (io.enable && io.iAddr =/= prevAddr) {
+    when (hitAxiDirect || hitAxiBuf || hitWay || invalidAddr) {
+      hitCount := hitCount + 1.U
+    } .otherwise {
+      missCount := missCount + 1.U
+    }
+  }
 
   when (io.enable) {
     when (invalidAddr) {
