@@ -9,14 +9,15 @@ import types._
 
 import scala.collection.immutable.List
 
-class DCache(config: CacheConfig) extends Module {
+class DCache(config: CacheConfig, verbose: Boolean = false) extends Module {
   val lineBankNum = 8
   val bankSelWidth = 3 // 3 = log2(8)
 
   /**
     * Expand wstrb to bit-wise masks.
     * Example:
-    *   expandStrb("b0010".U) === "h00_00_ff_00".U
+    * expandStrb("b0010".U) === "h00_00_ff_00".U
+    *
     * @param wstrb
     * @return corresponding bitwise mask of wstrb
     */
@@ -27,7 +28,8 @@ class DCache(config: CacheConfig) extends Module {
 
   /**
     * Change input 32-bit word according to wstrb and wdata
-    * @param word the input word
+    *
+    * @param word  the input word
     * @param wstrb write mask
     * @param wdata write data
     * @return modified word
@@ -40,6 +42,7 @@ class DCache(config: CacheConfig) extends Module {
 
   /**
     * Get output based on address and read size
+    *
     * @param word
     * @param dAddr
     * @param dSize
@@ -48,8 +51,8 @@ class DCache(config: CacheConfig) extends Module {
   def readWord(word: UInt, dAddr: UInt, dSize: UInt): UInt = {
     val rData = Wire(UInt(32.W))
     rData := 0.U
-    when (dSize === 0.U) {
-      switch (dAddr(1, 0)) {
+    when(dSize === 0.U) {
+      switch(dAddr(1, 0)) {
         is(0.U) {
           rData := Cat(0.U(24.W), word(7, 0))
         }
@@ -63,13 +66,13 @@ class DCache(config: CacheConfig) extends Module {
           rData := Cat(0.U(24.W), word(31, 24))
         }
       }
-    } .elsewhen(dSize === 1.U) {
-      when (dAddr(1) === 0.U) {
+    }.elsewhen(dSize === 1.U) {
+      when(dAddr(1) === 0.U) {
         rData := Cat(0.U(16.W), word(15, 0))
-      } .otherwise {
+      }.otherwise {
         rData := Cat(0.U(16.W), word(31, 16))
       }
-    } .otherwise {
+    }.otherwise {
       rData := word
     }
     rData
@@ -77,6 +80,7 @@ class DCache(config: CacheConfig) extends Module {
 
   /**
     * Get a mask with its n-th bit being 1 of width w
+    *
     * @param w
     * @param n
     * @return
@@ -87,6 +91,7 @@ class DCache(config: CacheConfig) extends Module {
 
   /**
     * Set the n-th bit of x to 1
+    *
     * @param x
     * @param n
     * @return
@@ -98,6 +103,7 @@ class DCache(config: CacheConfig) extends Module {
 
   /**
     * Set the n-th bit of x to 0
+    *
     * @param x
     * @param n
     * @return
@@ -171,8 +177,8 @@ class DCache(config: CacheConfig) extends Module {
   /**
     * fuse way number and set address into one UInt to address the mem
     * Example:
-    *   To address the tag of set 10 at way 2, use:
-    *     tagMem(fuse(2.U, 10.U))
+    * To address the tag of set 10 at way 2, use:
+    * tagMem(fuse(2.U, 10.U))
     */
   val fuse: (UInt, UInt) => UInt = (wid, sid) => Cat(wid, sid)
 
@@ -220,6 +226,7 @@ class DCache(config: CacheConfig) extends Module {
 
   // default output
   def fillBankVec(x: UInt): Vec[Vec[UInt]] = VecInit(List.fill(config.wayNum)(VecInit(List.fill(lineBankNum)(x))))
+
   io.bankWEn := fillBankVec(0.U(1.W))
   io.bankSetAddr := Mux(rState === rsRefill, config.sliceSet(rAddr), dSet)
   io.axiReadAddrOut.arid := 0.U
@@ -236,7 +243,7 @@ class DCache(config: CacheConfig) extends Module {
 
   // output handle
   io.rData := 0.U
-  switch (oState) {
+  switch(oState) {
     is(osKnown) {
       io.rData := oKnownData
     }
@@ -297,42 +304,44 @@ class DCache(config: CacheConfig) extends Module {
   refillSel := lruMem.io.waySel
 
   // will not synthesize: event logging
-  when (io.enable) {
-    printf(p"requested address: ${io.dAddr}\n")
-    when (axiWritingBack) {
-      printf("stall reason: hitted line is being written back\n")
-    } .elsewhen(refilling) {
-      printf("stall reason: cache is refilling data\n")
-    } .elsewhen(hitAxiDirect) {
-      printf("hit axi direct\n")
-    } .elsewhen(hitAxiBuf) {
-      printf("hit axi read buffer\n")
-    } .elsewhen(hitWay) {
-      printf(p"hit bank data in way ${hitWayId}\n")
-    } .otherwise {
-      when (axiReady) {
-        printf("miss, axi ready\n")
-      } .otherwise {
-        printf("miss, axi not ready\n")
+  if (verbose) {
+    when(io.enable) {
+      printf(p"requested address: ${io.dAddr}\n")
+      when(axiWritingBack) {
+        printf("stall reason: hitted line is being written back\n")
+      }.elsewhen(refilling) {
+        printf("stall reason: cache is refilling data\n")
+      }.elsewhen(hitAxiDirect) {
+        printf("hit axi direct\n")
+      }.elsewhen(hitAxiBuf) {
+        printf("hit axi read buffer\n")
+      }.elsewhen(hitWay) {
+        printf(p"hit bank data in way ${hitWayId}\n")
+      }.otherwise {
+        when(axiReady) {
+          printf("miss, axi ready\n")
+        }.otherwise {
+          printf("miss, axi not ready\n")
+        }
       }
     }
   }
 
-  when (io.enable && !axiWritingBack && !refilling) {
-    when (hitAxiDirect) {
+  when(io.enable && !axiWritingBack && !refilling) {
+    when(hitAxiDirect) {
       oState := osKnown
       oKnownData := readWord(io.axiReadIn.rdata, io.dAddr, io.dSize)
       rDirty := Mux(io.wEn, 1.U, rDirty)
       // update lru
       lruMem.io.visit := rRefillSel
-    } .elsewhen(hitAxiBuf) {
+    }.elsewhen(hitAxiBuf) {
       oState := osKnown
       oKnownData := readWord(rBuf(dBank), io.dAddr, io.dSize)
       rDirty := Mux(io.wEn, 1.U, rDirty)
       rBuf(dBank) := writeWord(rBuf(dBank), io.wStrb, io.wData)
       // update lru
       lruMem.io.visit := rRefillSel
-    } .elsewhen(hitWay) {
+    }.elsewhen(hitWay) {
       oState := osRead
       oReadWay := hitWayId
       oReadBank := dBank
@@ -343,7 +352,7 @@ class DCache(config: CacheConfig) extends Module {
       // update control
       dirtyMem(hitWayId) := Mux(io.wEn, setBit(dirtyMem(hitWayId), dSet), dirtyMem(hitWayId))
       lruMem.io.visit := hitWayId
-    } .elsewhen(axiReady) {
+    }.elsewhen(axiReady) {
       // miss
       rState := rsAddr
       rAddr := Cat(io.dAddr(31, 2), "b00".U(2.W))
@@ -360,7 +369,7 @@ class DCache(config: CacheConfig) extends Module {
 
   // axi state transition
   // write state
-  switch (wState) {
+  switch(wState) {
     is(wsRead) {
       wState := wsSubmit
       wBuf := io.bankDataIn(rRefillSel)
@@ -371,22 +380,22 @@ class DCache(config: CacheConfig) extends Module {
     }
   }
   // read state
-  switch (rState) {
+  switch(rState) {
     is(rsAddr) {
-      when (io.vcHit) {
+      when(io.vcHit) {
         rState := rsRefill
         rValid := VecInit(List.fill(lineBankNum)(true.B))
         rBuf := io.vcRData
-      } .otherwise {
+      }.otherwise {
         io.axiReadAddrOut.arvalid := 1.U
         rState := Mux(io.axiReadAddrIn.arready, rsRead, rsAddr)
       }
     }
 
     is(rsRead) {
-      when (hitAxiDirect && io.wEn) {
+      when(hitAxiDirect && io.wEn) {
         rBuf(rBank) := writeWord(io.axiReadIn.rdata, io.wStrb, io.wData)
-      } .otherwise {
+      }.otherwise {
         rBuf(rBank) := Mux(io.axiReadIn.rvalid, io.axiReadIn.rdata, 0.U)
       }
       rValid(rBank) := io.axiReadIn.rvalid
@@ -413,6 +422,7 @@ class DCache(config: CacheConfig) extends Module {
 
 object fact {
   def f(x: Int): Int = if (x <= 0) 1 else x * f(x - 1)
+
   def apply(x: Int): Int = f(x)
 }
 
@@ -421,7 +431,7 @@ object getLruWidth {
 }
 
 object DCache extends App {
-  (new ChiselStage)execute(args, Seq(ChiselGeneratorAnnotation(
+  (new ChiselStage) execute(args, Seq(ChiselGeneratorAnnotation(
     () =>
-      new DCache(new CacheConfig(wayNum = 2, setWidth = 8)))))
+      new DCache(new CacheConfig(wayNum = 2, setWidth = 8), verbose = false))))
 }
