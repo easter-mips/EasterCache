@@ -120,7 +120,7 @@ class ICache(val config: CacheConfig, val transNum: Int) extends Module {
   io.inst2 := 0.U
   io.inst1Valid := false.B
   io.inst2Valid := false.B
-  io.axiReadAddrOut.arid := addressingSel
+  io.axiReadAddrOut.arid := addressingSel.pad(4)
   io.axiReadAddrOut.araddr := rAddr(addressingSel)
   io.axiReadAddrOut.arvalid := rIsAddressing.asUInt.orR
   io.axiReadAddrOut.arlen := 7.U
@@ -179,14 +179,14 @@ class ICache(val config: CacheConfig, val transNum: Int) extends Module {
   val inAxiReads = Wire(UInt(transNum.W))
   inAxiReads := VecInit.tabulate(transNum) { i =>
     config.sliceLineAddr(io.iAddr) === config.sliceLineAddr(rAddr(i)) &&
-      rState(i) === rsRead
+      rState(i) =/= rsIdle
   }.asUInt
   val inAxiRead = Wire(Bool())
   inAxiRead := inAxiReads.orR
   // hit axi direct
   val hitAxiDirects = Wire(UInt(transNum.W))
   hitAxiDirects := VecInit.tabulate(transNum) { i =>
-    inAxiReads(i) && iBank === rBank(i) && axiRValid(i)
+    inAxiReads(i) && iBank === rBank(i) && axiRValid(i) && rState(i) === rsRead
   }.asUInt
   val hitAxiDirect = Wire(Bool())
   hitAxiDirect := hitAxiDirects.orR()
@@ -195,7 +195,7 @@ class ICache(val config: CacheConfig, val transNum: Int) extends Module {
   // hit axi buf
   val hitAxiBufs = Wire(UInt(transNumWidth.W))
   hitAxiBufs := VecInit.tabulate(transNum) { i =>
-    inAxiReads(i) && rValid(i)(iBank)
+    inAxiReads(i) && rValid(i)(iBank) && (rState(i) === rsRead || rState(i) === rsRefill)
   }.asUInt
   val hitAxiBuf = Wire(Bool())
   hitAxiBuf := hitAxiBufs.orR
@@ -245,7 +245,7 @@ class ICache(val config: CacheConfig, val transNum: Int) extends Module {
     } .otherwise {
       // miss handle
       oState := osNone
-      when (!inAxiRead.orR && rIsIdle.asUInt.orR) {
+      when (!inAxiRead.orR && rIsIdle.asUInt.orR && !rIsAddressing.asUInt.orR) {
         rState(idleSel) := rsAddressing
         rAddr(idleSel) := io.iAddr
         rBank(idleSel) := iBank
