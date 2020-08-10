@@ -19,6 +19,7 @@ class ICache(val config: CacheConfig, val transNum: Int) extends Module {
     val inst2 = Output(UInt(32.W))
     val inst1Valid = Output(Bool())
     val inst2Valid = Output(Bool())
+    val action = Input(UInt(4.W))
     // interface to AXI ram
     val axiReadAddrOut = Output(new AxiReadAddrOut)
     val axiReadAddrIn = Input(new AxiReadAddrIn)
@@ -38,6 +39,11 @@ class ICache(val config: CacheConfig, val transNum: Int) extends Module {
   def setBit(x: UInt, n: UInt): UInt = {
     val w = x.getWidth
     x | getMask(w, n)
+  }
+
+  def clearBit(x: UInt, n: UInt): UInt = {
+    val m: UInt = getMask(x.getWidth, n)
+    x & (~m).asUInt
   }
 
   // data mem
@@ -70,6 +76,7 @@ class ICache(val config: CacheConfig, val transNum: Int) extends Module {
   val rBuf = List.fill(transNum) { Mem(config.lineBankNum, UInt(32.W)) }
   val rValid = RegInit(VecInit.tabulate(transNum) { _ => 0.U(config.lineBankNum.W) })
   val rRefillWay = RegInit(VecInit.tabulate(transNum) { _ => 0.U(config.wayNumWidth.W) })
+  val rInvalid = RegInit(VecInit.tabulate(transNum) { _ => false.B })
 
   val rBufData = VecInit.tabulate(transNum) { i => VecInit.tabulate(config.lineBankNum) { j => rBuf(i)(j) } }
 
@@ -215,7 +222,29 @@ class ICache(val config: CacheConfig, val transNum: Int) extends Module {
     }
   }
 
-  when (io.enable) {
+  // cache action
+  val actionAddr = Wire(Bool())
+  val actionInv = Wire(Bool())
+  val actionValid = Wire(Bool())
+  actionAddr := io.action(3)
+  actionInv := io.action(2)
+  actionValid := io.action(2, 0).orR
+
+  when (actionInv) { // invalidate
+    when (actionAddr === 0.U && hitWay) { // hit invalidate
+      validMem(hitWayId) := clearBit(validMem(hitWayId), iSet)
+    } .elsewhen(actionAddr === 0.U && (hitAxiDirect || hitAxiBuf)) {
+      rInvalid(Mux(hitAxiDirect, hitAxiDirectId, hitAxiBufId)) := true.B
+    }
+    when (actionAddr === 1.U) { // index invalidate
+      // get way id
+      val invWayId = Wire(UInt(config.wayNumWidth.W))
+      invWayId := iTag(config.wayNumWidth - 1, 0)
+      validMem(invWayId) := clearBit(validMem(invWayId), iSet)
+    }
+  }
+
+  when (io.enable && !actionValid) {
     when (invalidAddr) {
       io.inst1Valid := true.B
       io.inst2Valid := true.B
@@ -250,6 +279,7 @@ class ICache(val config: CacheConfig, val transNum: Int) extends Module {
         rAddr(idleSel) := io.iAddr
         rBank(idleSel) := iBank
         rValid(idleSel) := 0.U
+        rInvalid(idleSel) := false.B
         rRefillWay(idleSel) := lruMem.io.waySel
       }
     }
@@ -275,7 +305,11 @@ class ICache(val config: CacheConfig, val transNum: Int) extends Module {
         when (i.U === refillSel) {
           rState(i) := rsIdle
           tagMem(fuse(rRefillWay(i), config.sliceSet(rAddr(i)))) := config.sliceTag(rAddr(i))
-          validMem(rRefillWay(i)) := setBit(validMem(rRefillWay(i)), config.sliceSet(rAddr(i)))
+          validMem(rRefillWay(i)) := Mux(
+            rInvalid(i),
+            clearBit(validMem(rRefillWay(i)), config.sliceSet(rAddr(i))),
+            setBit(validMem(rRefillWay(i)), config.sliceSet(rAddr(i)))
+          )
         }
       }
     }
@@ -285,5 +319,5 @@ class ICache(val config: CacheConfig, val transNum: Int) extends Module {
 object ICache extends App {
   new ChiselStage execute(args, Seq(ChiselGeneratorAnnotation(
     () =>
-      new ICache(new CacheConfig(wayNum = 2, setWidth = 8), transNum = 2))))
+      new ICache(new CacheConfig(wayNum = 2, setWidth = 8), transNum = 4))))
 }

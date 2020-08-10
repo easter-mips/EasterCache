@@ -123,6 +123,7 @@ class DCache(config: CacheConfig, verbose: Boolean = false) extends Module {
     val wStrb = Input(UInt(4.W))
     val dWait = Output(Bool())
     val rData = Output(UInt(32.W))
+    val action = Input(UInt(4.W))
     // statistic interface
     val missCount = Output(UInt(32.W))
     val hitCount = Output(UInt(32.W))
@@ -147,7 +148,7 @@ class DCache(config: CacheConfig, verbose: Boolean = false) extends Module {
   })
 
   // axi read state
-  val rsIdle :: rsAddr :: rsRead :: rsRefill :: Nil = Enum(4)
+  val rsIdle :: rsAddr :: rsRead :: rsRefill :: rsWB :: Nil = Enum(5)
   // victim cache write state
   val wsIdle :: wsRead :: wsSubmit :: Nil = Enum(3)
   // output state
@@ -199,6 +200,8 @@ class DCache(config: CacheConfig, verbose: Boolean = false) extends Module {
   val rRefillSel = RegInit(0.U(config.wayNumWidth.W))
   // whether read out data is dirty
   val rDirty = RegInit(false.B)
+  val rInvalid = RegInit(false.B)
+  val rWB = RegInit(false.B)
 
   // axi write registers
   // the address to write back
@@ -272,9 +275,9 @@ class DCache(config: CacheConfig, verbose: Boolean = false) extends Module {
   hitWayId := PriorityEncoder(hitWays)
 
   val hitAxiBuf = Wire(Bool())
-  hitAxiBuf := config.sliceLineAddr(rAddr) === config.sliceLineAddr(io.dAddr) && rState === rsRead && rValid(config.sliceBank(io.dAddr))
+  hitAxiBuf := config.sliceLineAddr(rAddr) === config.sliceLineAddr(io.dAddr) && rState === rsRead && rValid(config.sliceBank(io.dAddr)) && !rInvalid
   val hitAxiDirect = Wire(Bool())
-  hitAxiDirect := config.sliceLineAddr(rAddr) === config.sliceLineAddr(io.dAddr) && rState === rsRead &&
+  hitAxiDirect := config.sliceLineAddr(rAddr) === config.sliceLineAddr(io.dAddr) && rState === rsRead && !rInvalid &&
     config.sliceBank(io.dAddr) === rBank && io.axiReadIn.rvalid
   // conflicting condition I: cache is refilling data back into BRAM
   val refilling = Wire(Bool())
@@ -285,7 +288,6 @@ class DCache(config: CacheConfig, verbose: Boolean = false) extends Module {
 
   val hit = Wire(Bool())
   hit := !axiWritingBack && !refilling && (hitAxiDirect || hitAxiBuf || hitWay)
-  io.dWait := io.enable && !hit
 
   // count miss & hit
   val isMiss = Wire(Bool())
@@ -327,7 +329,68 @@ class DCache(config: CacheConfig, verbose: Boolean = false) extends Module {
     }
   }
 
-  when(io.enable && !axiWritingBack && !refilling) {
+  // cache action
+  val actionAddr = Wire(Bool())
+  val actionInv = Wire(Bool())
+  val actionStore = Wire(Bool())
+  val actionWB = Wire(Bool())
+  val actionValid = Wire(Bool())
+  actionAddr := io.action(3)
+  actionInv := io.action(2)
+  actionStore := io.action(1)
+  actionWB := io.action(0)
+  actionValid := io.action(2, 0).orR
+
+  val actionOk = Wire(Bool())
+  actionOk := true.B
+
+  io.dWait := (io.enable && !hit) || (actionValid && actionOk)
+
+  // invalidate
+  when (actionInv) {
+    when (actionAddr === 0.U) { // hit addressing
+      when (hitAxiDirect || hitAxiBuf) {
+        rInvalid := true.B
+      } .elsewhen (hitWay) {
+        validMem(hitWayId) := clearBit(validMem(hitWayId), dSet)
+      }
+    } .otherwise { // index addressing
+      val invWayId = Wire(UInt(config.wayNumWidth.W))
+      invWayId := dTag(config.wayNumWidth - 1, 0)
+      validMem(invWayId) := clearBit(validMem(invWayId), dSet)
+    }
+  }
+  // write back
+  when (actionWB) {
+    when (actionAddr === 0.U) { // hit addressing
+      when ((hitAxiDirect || hitAxiBuf) && rDirty) {
+        // need write back
+        rWB := true.B
+      } .elsewhen(hitWay) {
+        when (wState === wsIdle && rState =/= rsRefill) {
+          wState := wsRead
+          wNeedWB := true.B
+          wAddr := Cat(tagMem(fuse(hitWayId, dSet)), Cat(dSet, 0.U(5.W)))
+        } .otherwise {
+          actionOk := false.B
+        }
+      }
+    } .otherwise { // index addressing
+      val invWayId = Wire(UInt(config.wayNumWidth.W))
+      invWayId := dTag(config.wayNumWidth - 1, 0)
+      when (validMem(invWayId)(dSet) && dirtyMem(invWayId)(dSet)) { // need write back
+        when (wState === wsIdle && rState =/= rsRefill) {
+          wState := wsRead
+          wNeedWB := true.B
+          wAddr := Cat(tagMem(fuse(invWayId, dSet)), Cat(dSet, 0.U(5.W)))
+        } .otherwise {
+          actionOk := false.B
+        }
+      }
+    }
+  }
+
+  when(io.enable && !axiWritingBack && !refilling && !actionValid) {
     when(hitAxiDirect) {
       oState := osKnown
       oKnownData := readWord(io.axiReadIn.rdata, io.dAddr, io.dSize)
@@ -359,6 +422,8 @@ class DCache(config: CacheConfig, verbose: Boolean = false) extends Module {
       rBank := dBank
       rValid := VecInit(List.fill(lineBankNum)(false.B))
       rDirty := 0.U
+      rInvalid := false.B
+      rWB := false.B
       rRefillSel := refillSel
 
       wNeedWB := validMem(refillSel)(dSet)
@@ -408,14 +473,28 @@ class DCache(config: CacheConfig, verbose: Boolean = false) extends Module {
       io.bankWEn(rRefillSel) := VecInit(List.fill(lineBankNum)("hf".U))
       // update control state
       tagMem(fuse(rRefillSel, config.sliceSet(rAddr))) := config.sliceTag(rAddr)
-      validMem(rRefillSel) := setBit(validMem(rRefillSel), config.sliceSet(rAddr))
       dirtyMem(rRefillSel) := Mux(
         rDirty,
         setBit(dirtyMem(rRefillSel), config.sliceSet(rAddr)),
         clearBit(dirtyMem(rRefillSel), config.sliceSet(rAddr))
       )
+      validMem(rRefillSel) := Mux(
+        rInvalid,
+        clearBit(validMem(rRefillSel), config.sliceSet(rAddr)),
+        setBit(validMem(rRefillSel), config.sliceSet(rAddr))
+      )
 
-      rState := rsIdle
+      rState := Mux(rWB, rsWB, rsIdle)
+    }
+
+    is(rsWB) {
+      rState := Mux(wState === wsIdle, rsIdle, rsWB)
+      when (wState === wsIdle) {
+        wState := wsSubmit
+        wBuf := rBuf
+        wNeedWB := true.B
+        wAddr := Cat(config.sliceLineAddr(rAddr), Cat(dSet, 0.U(5.W)))
+      }
     }
   }
 }
