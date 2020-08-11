@@ -324,7 +324,7 @@ class DCache(config: CacheConfig, verbose: Boolean = false) extends Module {
         when (wState === wsIdle && rState =/= rsRefill) {
           wState := wsRead
           wNeedWB := true.B
-          wAddr := Cat(tagMem(fuse(hitWayId, dSet)), Cat(dSet, 0.U(5.W)))
+          wAddr := Cat(tagMem(fuse(hitWayId, dSet)), Cat(dSet, 0.U((config.bankNumWidth + 2).W)))
         } .otherwise {
           actionOk := false.B
         }
@@ -336,7 +336,7 @@ class DCache(config: CacheConfig, verbose: Boolean = false) extends Module {
         when (wState === wsIdle && rState =/= rsRefill) {
           wState := wsRead
           wNeedWB := true.B
-          wAddr := Cat(tagMem(fuse(invWayId, dSet)), Cat(dSet, 0.U(5.W)))
+          wAddr := Cat(tagMem(fuse(invWayId, dSet)), Cat(dSet, 0.U((config.bankNumWidth + 2).W)))
         } .otherwise {
           actionOk := false.B
         }
@@ -382,7 +382,7 @@ class DCache(config: CacheConfig, verbose: Boolean = false) extends Module {
 
       wNeedWB := validMem(refillSel)(dSet)
       wState := Mux(validMem(refillSel)(dSet), wsRead, wsIdle)
-      wAddr := Cat(tagMem(fuse(refillSel, dSet)), Cat(dSet, 0.U(5.W)))
+      wAddr := Cat(tagMem(fuse(refillSel, dSet)), Cat(dSet, 0.U((config.bankNumWidth + 2).W)))
       // invalidate selected line
       validMem(refillSel) := clearBit(validMem(refillSel), dSet)
     }
@@ -449,7 +449,7 @@ class DCache(config: CacheConfig, verbose: Boolean = false) extends Module {
         wState := wsSubmit
         wBuf := rBuf
         wNeedWB := true.B
-        wAddr := Cat(config.sliceLineAddr(rAddr), Cat(dSet, 0.U(5.W)))
+        wAddr := Cat(config.sliceLineAddr(rAddr), Cat(dSet, 0.U((config.bankNumWidth + 2).W)))
       }
     }
   }
