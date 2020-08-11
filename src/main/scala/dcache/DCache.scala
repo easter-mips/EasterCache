@@ -150,7 +150,7 @@ class DCache(config: CacheConfig, verbose: Boolean = false) extends Module {
   // the requested axi addr
   val rAddr = RegInit(0.U(32.W))
   // next bank to read from axi
-  val rBank = RegInit(0.U(3.W))
+  val rBank = RegInit(0.U(config.bankNumWidth.W))
   // read buffer
   val rBuf = RegInit(VecInit(List.fill(config.lineBankNum)(0.U(32.W))))
   // valid indicator of buffer
@@ -194,7 +194,7 @@ class DCache(config: CacheConfig, verbose: Boolean = false) extends Module {
   io.axiReadAddrOut.arid := 0.U
   io.axiReadAddrOut.araddr := rAddr
   io.axiReadAddrOut.arvalid := 0.U
-  io.axiReadAddrOut.arlen := 7.U
+  io.axiReadAddrOut.arlen := 15.U
   io.axiReadAddrOut.arsize := 2.U
   io.axiReadAddrOut.arburst := 2.U
   io.axiReadOut.rready := rState === rsRead
@@ -468,5 +468,5 @@ object getLruWidth {
 object DCache extends App {
   (new ChiselStage) execute(args, Seq(ChiselGeneratorAnnotation(
     () =>
-      new DCache(new CacheConfig(wayNum = 2, setWidth = 8), verbose = false))))
+      new DCache(new CacheConfig(wayNum = 2, setWidth = 7, lineBankNum = 16), verbose = false))))
 }
