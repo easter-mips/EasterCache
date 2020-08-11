@@ -270,7 +270,6 @@ class DCache(config: CacheConfig, verbose: Boolean = false) extends Module {
   val hitWays = Wire(UInt(config.wayNum.W))
   hitWays := VecInit((0 until config.wayNum).map(i => validMem(i)(dSet) && (tagMem(fuse(i.U(config.wayNumWidth.W), dSet)) === dTag))).asUInt
   val hitWay = Wire(Bool())
-  hitWay := hitWays.orR()
   val hitWayId = Wire(UInt(config.wayNumWidth.W))
   hitWayId := PriorityEncoder(hitWays)
 
@@ -282,12 +281,11 @@ class DCache(config: CacheConfig, verbose: Boolean = false) extends Module {
   // conflicting condition I: cache is refilling data back into BRAM
   val refilling = Wire(Bool())
   refilling := rState === rsRefill
-  // conflicting condition II: requested line is being written back to AXI ram
-  val axiWritingBack = Wire(Bool())
-  axiWritingBack := config.sliceLineAddr(io.dAddr) === config.sliceLineAddr(wAddr) && !axiReady && wNeedWB
+
+  hitWay := hitWays.orR() && !refilling
 
   val hit = Wire(Bool())
-  hit := !axiWritingBack && !refilling && (hitAxiDirect || hitAxiBuf || hitWay)
+  hit := hitAxiDirect || hitAxiBuf || hitWay
 
   // count miss & hit
   val isMiss = Wire(Bool())
@@ -309,9 +307,8 @@ class DCache(config: CacheConfig, verbose: Boolean = false) extends Module {
   if (verbose) {
     when(io.enable) {
       printf(p"requested address: ${io.dAddr}\n")
-      when(axiWritingBack) {
-        printf("stall reason: hitted line is being written back\n")
-      }.elsewhen(refilling) {
+
+      when(refilling) {
         printf("stall reason: cache is refilling data\n")
       }.elsewhen(hitAxiDirect) {
         printf("hit axi direct\n")
@@ -390,7 +387,7 @@ class DCache(config: CacheConfig, verbose: Boolean = false) extends Module {
     }
   }
 
-  when(io.enable && !axiWritingBack && !refilling && !actionValid) {
+  when(io.enable && !actionValid) {
     when(hitAxiDirect) {
       oState := osKnown
       oKnownData := readWord(io.axiReadIn.rdata, io.dAddr, io.dSize)
@@ -429,6 +426,8 @@ class DCache(config: CacheConfig, verbose: Boolean = false) extends Module {
       wNeedWB := validMem(refillSel)(dSet)
       wState := Mux(validMem(refillSel)(dSet), wsRead, wsIdle)
       wAddr := Cat(tagMem(fuse(refillSel, dSet)), Cat(dSet, 0.U(5.W)))
+      // invalidate selected line
+      validMem(refillSel) := clearBit(validMem(refillSel), dSet)
     }
   }
 

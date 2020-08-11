@@ -319,5 +319,5 @@ class ICache(val config: CacheConfig, val transNum: Int) extends Module {
 object ICache extends App {
   new ChiselStage execute(args, Seq(ChiselGeneratorAnnotation(
     () =>
-      new ICache(new CacheConfig(wayNum = 2, setWidth = 8), transNum = 4))))
+      new ICache(new CacheConfig(wayNum = 2, setWidth = 8), transNum = 2))))
 }
