@@ -80,7 +80,7 @@ class ICache(val config: CacheConfig, val transNum: Int) extends Module {
 
   val rBufData = VecInit.tabulate(transNum) { i => VecInit.tabulate(config.lineBankNum) { j => rBuf(i)(j) } }
 
-  def isState(s: UInt) = VecInit.tabulate(transNum) { i => rState(i) === s }
+  def isState(s: UInt): Vec[Bool] = VecInit.tabulate(transNum) { i => rState(i) === s }
 
   val rIsIdle = Wire(Vec(transNum, Bool()))
   rIsIdle := isState(rsIdle)
