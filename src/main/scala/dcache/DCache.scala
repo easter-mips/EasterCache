@@ -37,44 +37,6 @@ class DCache(config: CacheConfig, verbose: Boolean = false) extends Module {
     (wMask & wdata) | ((~wMask) & word)
   }
 
-//  /**
-//    * Get output based on address and read size
-//    *
-//    * @param word
-//    * @param dAddr
-//    * @param dSize
-//    * @return
-//    */
-//  def readWord(word: UInt, dAddr: UInt, dSize: UInt): UInt = {
-//    val rData = Wire(UInt(32.W))
-//    rData := 0.U
-//    when(dSize === 0.U) {
-//      switch(dAddr(1, 0)) {
-//        is(0.U) {
-//          rData := Cat(0.U(24.W), word(7, 0))
-//        }
-//        is(1.U) {
-//          rData := Cat(0.U(24.W), word(15, 8))
-//        }
-//        is(2.U) {
-//          rData := Cat(0.U(24.W), word(23, 16))
-//        }
-//        is(3.U) {
-//          rData := Cat(0.U(24.W), word(31, 24))
-//        }
-//      }
-//    }.elsewhen(dSize === 1.U) {
-//      when(dAddr(1) === 0.U) {
-//        rData := Cat(0.U(16.W), word(15, 0))
-//      }.otherwise {
-//        rData := Cat(0.U(16.W), word(31, 16))
-//      }
-//    }.otherwise {
-//      rData := word
-//    }
-//    rData
-//  }
-
   /**
     * Get a mask with its n-th bit being 1 of width w
     *
@@ -248,7 +210,6 @@ class DCache(config: CacheConfig, verbose: Boolean = false) extends Module {
       io.rData := oKnownData
     }
     is(osRead) {
-//      io.rData := readWord(io.bankDataIn(oReadWay)(oReadBank), oReadAddr, oReadSize)
       io.rData := io.bankDataIn(oReadWay)(oReadBank)
     }
   }
@@ -386,14 +347,12 @@ class DCache(config: CacheConfig, verbose: Boolean = false) extends Module {
   when(io.enable && !actionValid) {
     when(hitAxiDirect) {
       oState := osKnown
-//      oKnownData := readWord(io.axiReadIn.rdata, io.dAddr, io.dSize)
       oKnownData := io.axiReadIn.rdata
       rDirty := Mux(io.wEn, 1.U, rDirty)
       // update lru
       lruMem.io.visit := rRefillSel
     }.elsewhen(hitAxiBuf) {
       oState := osKnown
-//      oKnownData := readWord(rBuf(dBank), io.dAddr, io.dSize)
       oKnownData := rBuf(dBank)
       rDirty := Mux(io.wEn, 1.U, rDirty)
       rBuf(dBank) := writeWord(rBuf(dBank), io.wStrb, io.wData)
