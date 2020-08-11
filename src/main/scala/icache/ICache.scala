@@ -8,6 +8,13 @@ import lru.LruMem
 import mem.BlockMem
 import types._
 
+class BankData(val config: CacheConfig) extends Bundle {
+  val addr = Output(UInt(config.setWidth.W))
+  val read = Input(Vec(config.wayNum, Vec(config.lineBankNum, UInt(32.W))))
+  val write = Output(Vec(config.lineBankNum, UInt(32.W)))
+  val wEn = Output(Vec(config.wayNum, Bool()))
+}
+
 class ICache(val config: CacheConfig, val transNum: Int) extends Module {
   val transNumWidth = log2Ceil(transNum)
 
@@ -25,6 +32,8 @@ class ICache(val config: CacheConfig, val transNum: Int) extends Module {
     val axiReadAddrIn = Input(new AxiReadAddrIn)
     val axiReadOut = Output(new AxiReadOut)
     val axiReadIn = Input(new AxiReadIn)
+    // interface to bank ram
+    val bData = new BankData(config)
     // hit stats
     val hitStats = Output(new HitStats)
   })
@@ -47,19 +56,19 @@ class ICache(val config: CacheConfig, val transNum: Int) extends Module {
   }
 
   // data mem
-  val dataMem = List.fill(config.wayNum) {
-    Module(new BlockMem(new MemConfig(
-      depth = config.lineNums,
-      lineSize = config.lineBankNum
-    )))
-  }
-  val rDataMem = VecInit(dataMem.map { _.io.dataOut })
-  val wDataMem = Wire(Vec(config.lineBankNum, UInt(32.W)))
-  val dataMemAddr = Wire(UInt(32.W))
-  dataMem.foreach { m =>
-    m.io.addr := dataMemAddr
-    m.io.dataIn := wDataMem
-  }
+//  val dataMem = List.fill(config.wayNum) {
+//    Module(new BlockMem(new MemConfig(
+//      depth = config.lineNums,
+//      lineSize = config.lineBankNum
+//    )))
+//  }
+//  val rDataMem = VecInit(dataMem.map { _.io.dataOut })
+//  val wDataMem = Wire(Vec(config.lineBankNum, UInt(32.W)))
+//  val dataMemAddr = Wire(UInt(32.W))
+//  dataMem.foreach { m =>
+//    m.io.addr := dataMemAddr
+//    m.io.dataIn := wDataMem
+//  }
 
   // control state
   val validMem = RegInit(VecInit.tabulate(config.wayNum) { _ => 0.U(config.lineNums.W) } )
@@ -137,14 +146,17 @@ class ICache(val config: CacheConfig, val transNum: Int) extends Module {
   io.hitStats.hitCount := hitCount
   io.hitStats.missCount := missCount
 
-  dataMemAddr := Mux(rIsRefilling.asUInt.orR, config.sliceSet(rAddr(refillSel)), iSet)
-  for (i <- 0 until config.lineBankNum) {
-    wDataMem(i) := rBufData(refillSel)(i)
-  }
+//  dataMemAddr := Mux(rIsRefilling.asUInt.orR, config.sliceSet(rAddr(refillSel)), iSet)
+//  for (i <- 0 until config.lineBankNum) {
+//    wDataMem(i) := rBufData(refillSel)(i)
+//  }
+  io.bData.addr := Mux(rIsRefilling.asUInt.orR, config.sliceSet(rAddr(refillSel)), iSet);
+  io.bData.write := rBufData(refillSel)
 
-  dataMem.indices.foreach { i =>
-    dataMem(i).io.wEn := i.U === rRefillWay(refillSel) && rState(refillSel) === rsRefill
-  }
+//  dataMem.indices.foreach { i =>
+//    dataMem(i).io.wEn := i.U === rRefillWay(refillSel) && rState(refillSel) === rsRefill
+//  }
+  io.bData.wEn := VecInit.tabulate(config.wayNum) { i => i.U === rRefillWay(refillSel) && rState(refillSel) === rsRefill }
 
   lruMem.io.setAddr := iSet
   lruMem.io.visit := 0.U
@@ -167,8 +179,10 @@ class ICache(val config: CacheConfig, val transNum: Int) extends Module {
       io.inst2 := oKnownInst2
     }
     is(osRead) {
-      io.inst1 := rDataMem(oReadWay)(oReadBank)
-      io.inst2 := rDataMem(oReadWay)(oReadBank + 1.U)
+//      io.inst1 := rDataMem(oReadWay)(oReadBank)
+//      io.inst2 := rDataMem(oReadWay)(oReadBank + 1.U)
+      io.inst1 := io.bData.read(oReadWay)(oReadBank)
+      io.inst2 := io.bData.read(oReadWay)(oReadBank + 1.U)
     }
   }
 
@@ -319,5 +333,5 @@ class ICache(val config: CacheConfig, val transNum: Int) extends Module {
 object ICache extends App {
   new ChiselStage execute(args, Seq(ChiselGeneratorAnnotation(
     () =>
-      new ICache(new CacheConfig(wayNum = 2, setWidth = 8), transNum = 2))))
+      new ICache(new CacheConfig(wayNum = 2, setWidth = 7), transNum = 2))))
 }
