@@ -1,8 +1,6 @@
 package mem
 
 import chisel3._
-import chisel3.util._
-import chisel3.experimental._
 
 class bank_ram(val setWidth: Int) extends BlackBox {
   val io = IO(new Bundle {
