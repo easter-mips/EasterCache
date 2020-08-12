@@ -11,7 +11,7 @@ import types._
 class BankData(val config: CacheConfig) extends Bundle {
   val addr = UInt(config.setWidth.W)
   val read = Vec(config.wayNum, Vec(config.lineBankNum, UInt(32.W)))
-  val write = Vec(config.lineBankNum, UInt(33.W))
+  val write = Vec(config.lineBankNum, UInt(32.W))
   val wEn = Vec(config.wayNum, Bool())
 }
 
