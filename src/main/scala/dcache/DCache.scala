@@ -211,6 +211,12 @@ class DCache(config: CacheConfig, verbose: Boolean = false) extends Module {
   // the swapped out line needs to be written back
   val wNeedWB = RegInit(false.B)
 
+  // write request buffer
+  val wReqBank = RegInit(0.U(config.bankNumWidth.W))
+  val wReqData = RegInit(0.U(32.W))
+  val wReqWStrb = RegInit(0.U(4.W))
+  val wReqValid = RegInit(false.B)
+
   // wire defs
   val dSet = Wire(UInt(config.setWidth.W))
   dSet := config.sliceSet(io.dAddr)
@@ -266,6 +272,10 @@ class DCache(config: CacheConfig, verbose: Boolean = false) extends Module {
   val axiReady = Wire(Bool())
   axiReady := rState === rsIdle && wState === wsIdle
 
+  // whether possible to buffer the write request
+  val canBuffer = Wire(Bool())
+  canBuffer := !wReqValid && io.wEn && axiReady
+
   // hit handle
   val hitWays = Wire(UInt(config.wayNum.W))
   hitWays := VecInit((0 until config.wayNum).map(i => validMem(i)(dSet) && (tagMem(fuse(i.U(config.wayNumWidth.W), dSet)) === dTag))).asUInt
@@ -274,11 +284,15 @@ class DCache(config: CacheConfig, verbose: Boolean = false) extends Module {
   val hitWayId = Wire(UInt(config.wayNumWidth.W))
   hitWayId := PriorityEncoder(hitWays)
 
+  // buffered write request hit axi read
+  val bufHitAxiDirect = Wire(Bool())
+  bufHitAxiDirect := wReqValid && wReqBank === rBank && rState === rsRead && io.axiReadIn.rvalid
+
   val hitAxiBuf = Wire(Bool())
-  hitAxiBuf := config.sliceLineAddr(rAddr) === config.sliceLineAddr(io.dAddr) && rState === rsRead && rValid(config.sliceBank(io.dAddr)) && !rInvalid
+  hitAxiBuf := config.sliceLineAddr(rAddr) === config.sliceLineAddr(io.dAddr) && rState === rsRead && rValid(config.sliceBank(io.dAddr))
   val hitAxiDirect = Wire(Bool())
-  hitAxiDirect := config.sliceLineAddr(rAddr) === config.sliceLineAddr(io.dAddr) && rState === rsRead && !rInvalid &&
-    config.sliceBank(io.dAddr) === rBank && io.axiReadIn.rvalid
+  hitAxiDirect := config.sliceLineAddr(rAddr) === config.sliceLineAddr(io.dAddr) && rState === rsRead &&
+    config.sliceBank(io.dAddr) === rBank && io.axiReadIn.rvalid && !bufHitAxiDirect
   // conflicting condition I: cache is refilling data back into BRAM
   val refilling = Wire(Bool())
   refilling := rState === rsRefill
@@ -344,7 +358,7 @@ class DCache(config: CacheConfig, verbose: Boolean = false) extends Module {
   val actionOk = Wire(Bool())
   actionOk := true.B
 
-  io.dWait := (io.enable && !hit) || (actionValid && !actionOk)
+  io.dWait := (io.enable && !hit && !canBuffer) || (actionValid && !actionOk)
 
   // invalidate
   when (actionInv) {
@@ -415,7 +429,7 @@ class DCache(config: CacheConfig, verbose: Boolean = false) extends Module {
       // update control
       dirtyMem(hitWayId) := Mux(io.wEn, setBit(dirtyMem(hitWayId), dSet), dirtyMem(hitWayId))
       lruMem.io.visit := hitWayId
-    }.elsewhen(axiReady) {
+    } .elsewhen(axiReady) {
       // miss
       rState := rsAddr
       rAddr := Cat(io.dAddr(31, 2), "b00".U(2.W))
@@ -429,6 +443,16 @@ class DCache(config: CacheConfig, verbose: Boolean = false) extends Module {
       wNeedWB := validMem(refillSel)(dSet)
       wState := Mux(validMem(refillSel)(dSet), wsRead, wsIdle)
       wAddr := Cat(tagMem(fuse(refillSel, dSet)), Cat(dSet, 0.U(5.W)))
+      // invalidate selected line
+      validMem(refillSel) := clearBit(validMem(refillSel), dSet)
+
+      // this is a buffered write request
+      when (canBuffer) {
+        wReqBank := dBank
+        wReqData := io.wData
+        wReqWStrb := io.wStrb
+        wReqValid := true.B
+      }
     }
   }
 
@@ -458,9 +482,12 @@ class DCache(config: CacheConfig, verbose: Boolean = false) extends Module {
     }
 
     is(rsRead) {
-      when(hitAxiDirect && io.wEn) {
+      when (bufHitAxiDirect) {
+        rBuf(rBank) := writeWord(io.axiReadIn.rdata, wReqWStrb, wReqData)
+        wReqValid := false.B
+      } .elsewhen (hitAxiDirect && io.wEn) {
         rBuf(rBank) := writeWord(io.axiReadIn.rdata, io.wStrb, io.wData)
-      }.otherwise {
+      } .otherwise {
         rBuf(rBank) := Mux(io.axiReadIn.rvalid, io.axiReadIn.rdata, 0.U)
       }
       rValid(rBank) := io.axiReadIn.rvalid
