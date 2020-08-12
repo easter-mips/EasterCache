@@ -32,8 +32,6 @@ class ICache(val config: CacheConfig, val transNum: Int) extends Module {
     val axiReadAddrIn = Input(new AxiReadAddrIn)
     val axiReadOut = Output(new AxiReadOut)
     val axiReadIn = Input(new AxiReadIn)
-    // interface to bank ram
-//    val bData = new BankData(config)
     // hit stats
     val hitStats = Output(new HitStats)
   })

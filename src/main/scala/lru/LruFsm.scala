@@ -47,7 +47,7 @@ class LruFsm(val wayNum: Int) extends Module {
 }
 
 object LruFsm extends App {
-  (new ChiselStage).execute(args, Seq(ChiselGeneratorAnnotation(
+  new ChiselStage execute(args, Seq(ChiselGeneratorAnnotation(
     () =>
       new LruFsm(wayNum = 4))))
 }

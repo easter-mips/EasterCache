@@ -45,7 +45,7 @@ class LruMem(val config: CacheConfig) extends Module {
 }
 
 object LruMem extends App {
-  (new ChiselStage)execute(args, Seq(ChiselGeneratorAnnotation(
+  new ChiselStage execute(args, Seq(ChiselGeneratorAnnotation(
     () =>
       new LruMem(new CacheConfig(wayNum = 2, setWidth = 8)))))
 }

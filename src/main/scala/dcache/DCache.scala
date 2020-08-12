@@ -448,6 +448,12 @@ class DCache(config: CacheConfig, verbose: Boolean = false) extends Module {
         rState := rsRefill
         rValid := VecInit(List.fill(config.lineBankNum)(true.B))
         rBuf := io.vcRData
+
+        // handle buffered request valid
+        wReqValid := false.B
+        when (wReqValid) {
+          rBuf(wReqBank) := writeWord(rBuf(wReqBank), wReqWStrb, wReqData)
+        }
       }.otherwise {
         io.axiReadAddrOut.arvalid := 1.U
         rState := Mux(io.axiReadAddrIn.arready, rsRead, rsAddr)
@@ -510,7 +516,7 @@ object getLruWidth {
 }
 
 object DCache extends App {
-  (new ChiselStage) execute(args, Seq(ChiselGeneratorAnnotation(
+  new ChiselStage execute(args, Seq(ChiselGeneratorAnnotation(
     () =>
       new DCache(new CacheConfig(wayNum = 2, setWidth = 7, lineBankNum = 8), verbose = false))))
 }
