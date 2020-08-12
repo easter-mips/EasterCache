@@ -5,6 +5,50 @@ import chisel3.util._
 
 import scala.collection.immutable.List
 
+class AxiReadInterface extends Bundle {
+  // address channel
+  val arid = Input(UInt(4.W))
+  val araddr = Input(UInt(32.W))
+  val arvalid = Input(Bool())
+  val arlen = Input(UInt(4.W))
+  val arsize = Input(UInt(3.W))
+  val arburst = Input(UInt(2.W))
+  val arready = Output(Bool())
+
+  // read channel
+  val rready = Output(Bool())
+  val rid = Input(UInt(4.W))
+  val rdata = Input(UInt(32.W))
+  val rresp = Input(UInt(2.W))
+  val rlast = Input(Bool())
+  val rvalid = Input(Bool())
+}
+
+class AxiWriteInterface extends Bundle {
+  // address channel
+  val awid = Output(UInt(4.W))
+  val awaddr = Output(UInt(32.W))
+  val awlen = Output(UInt(4.W))
+  val awsize = Output(UInt(3.W))
+  val awburst = Output(UInt(2.W))
+  val awvalid = Output(Bool())
+  val awready = Input(Bool())
+
+  // write channel
+  val wid = Output(UInt(4.W))
+  val wdata = Output(UInt(32.W))
+  val wstrb = Output(UInt(4.W))
+  val wlast = Output(Bool())
+  val wvalid = Output(Bool())
+  val wready = Input(Bool())
+
+  // response channel
+  val bready = Output(Bool())
+  val bid = Input(UInt(4.W))
+  val bresp = Input(UInt(8.W))
+  val bvalid = Input(Bool())
+}
+
 class AxiReadAddrOut extends Bundle {
   val arid = UInt(4.W)
   val araddr = UInt(32.W)
