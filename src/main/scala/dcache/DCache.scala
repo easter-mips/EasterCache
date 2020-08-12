@@ -219,7 +219,7 @@ class DCache(config: CacheConfig, verbose: Boolean = false) extends Module {
   io.axiReadAddrOut.arid := 0.U
   io.axiReadAddrOut.araddr := rAddr
   io.axiReadAddrOut.arvalid := 0.U
-  io.axiReadAddrOut.arlen := 15.U
+  io.axiReadAddrOut.arlen := (config.lineBankNum - 1).U
   io.axiReadAddrOut.arsize := 2.U
   io.axiReadAddrOut.arburst := 2.U
   io.axiReadOut.rready := rState === rsRead

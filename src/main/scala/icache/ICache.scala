@@ -141,7 +141,7 @@ class ICache(val config: CacheConfig, val transNum: Int) extends Module {
   io.axiReadAddrOut.arid := addressingSel.pad(4)
   io.axiReadAddrOut.araddr := rAddr(addressingSel)
   io.axiReadAddrOut.arvalid := rIsAddressing.asUInt.orR
-  io.axiReadAddrOut.arlen := 7.U
+  io.axiReadAddrOut.arlen := (config.lineBankNum - 1).U
   io.axiReadAddrOut.arsize := 2.U
   io.axiReadAddrOut.arburst := 2.U
   io.axiReadOut.rready := isState(rsRead).asUInt.orR
