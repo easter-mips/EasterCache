@@ -5,9 +5,17 @@ import chisel3._
 import chisel3.util._
 import chisel3.stage.{ChiselGeneratorAnnotation, ChiselStage}
 import lru.LruMem
+import mem.data_bank_ram
 import types._
 
 import scala.collection.immutable.List
+
+class CacheData(val config: CacheConfig) extends Bundle {
+  val addr = UInt(config.setWidth.W)
+  val read = Vec(config.wayNum, Vec(config.lineBankNum, UInt(32.W)))
+  val write = Vec(config.lineBankNum, UInt(32.W))
+  val wEn = Vec(config.wayNum, Vec(config.lineBankNum, UInt(4.W)))
+}
 
 class DCache(config: CacheConfig, verbose: Boolean = false) extends Module {
   /**
@@ -86,11 +94,6 @@ class DCache(config: CacheConfig, verbose: Boolean = false) extends Module {
     // statistic interface
     val missCount = Output(UInt(32.W))
     val hitCount = Output(UInt(32.W))
-    // bank data interface
-    val bankDataIn = Input(Vec(config.wayNum, Vec(config.lineBankNum, UInt(32.W))))
-    val bankDataOut = Output(Vec(config.lineBankNum, UInt(32.W)))
-    val bankWEn = Output(Vec(config.wayNum, Vec(config.lineBankNum, UInt(4.W))))
-    val bankSetAddr = Output(UInt(config.setWidth.W))
     // axi interface
     val axiReadAddrOut = Output(new AxiReadAddrOut)
     val axiReadAddrIn = Input(new AxiReadAddrIn)
@@ -162,6 +165,22 @@ class DCache(config: CacheConfig, verbose: Boolean = false) extends Module {
   val rInvalid = RegInit(false.B)
   val rWB = RegInit(false.B)
 
+  // data mem
+  val dataMem = List.fill(config.wayNum) { List.fill(config.lineBankNum) { Module(new data_bank_ram(config.setWidth)) } }
+  // bank interface
+  val bData = Wire(new CacheData(config))
+  dataMem.indices.foreach { w =>
+    dataMem(w).indices.foreach { b =>
+      val m = dataMem(w)(b)
+      m.io.clka := clock
+      m.io.ena := true.B
+      m.io.wea := bData.wEn(w)(b)
+      m.io.addra := bData.addr
+      m.io.dina := bData.write(b)
+      bData.read(w)(b) := m.io.douta
+    }
+  }
+
   // axi write registers
   // the address to write back
   val wAddr = RegInit(0.U(32.W))
@@ -189,8 +208,8 @@ class DCache(config: CacheConfig, verbose: Boolean = false) extends Module {
   // default output
   def fillBankVec(x: UInt): Vec[Vec[UInt]] = VecInit(List.fill(config.wayNum)(VecInit(List.fill(config.lineBankNum)(x))))
 
-  io.bankWEn := fillBankVec(0.U(1.W))
-  io.bankSetAddr := Mux(rState === rsRefill, config.sliceSet(rAddr), dSet)
+  bData.wEn := VecInit.tabulate(config.wayNum) { _ => VecInit.tabulate(config.lineBankNum) { _ => 0.U } }
+  bData.addr := Mux(rState === rsRefill, config.sliceSet(rAddr), dSet)
   io.axiReadAddrOut.arid := 0.U
   io.axiReadAddrOut.araddr := rAddr
   io.axiReadAddrOut.arvalid := 0.U
@@ -210,14 +229,14 @@ class DCache(config: CacheConfig, verbose: Boolean = false) extends Module {
       io.rData := oKnownData
     }
     is(osRead) {
-      io.rData := io.bankDataIn(oReadWay)(oReadBank)
+      io.rData := bData.read(oReadWay)(oReadBank)
     }
   }
 
   // bank write data
   val hitBankOut = Wire(Vec(config.lineBankNum, UInt(32.W)))
   hitBankOut := VecInit((0 until config.lineBankNum).map(_ => io.wData))
-  io.bankDataOut := Mux(rState === rsRefill, rBuf, hitBankOut)
+  bData.write := Mux(rState === rsRefill, rBuf, hitBankOut)
 
   // whether axi is ready
   val axiReady = Wire(Bool())
@@ -365,7 +384,7 @@ class DCache(config: CacheConfig, verbose: Boolean = false) extends Module {
       oReadAddr := io.dAddr
       oReadSize := io.dSize
       // output bank write enable
-      io.bankWEn(hitWayId)(dBank) := io.wStrb
+      bData.wEn(hitWayId)(dBank) := io.wStrb
       // update control
       dirtyMem(hitWayId) := Mux(io.wEn, setBit(dirtyMem(hitWayId), dSet), dirtyMem(hitWayId))
       lruMem.io.visit := hitWayId
@@ -393,7 +412,7 @@ class DCache(config: CacheConfig, verbose: Boolean = false) extends Module {
   switch(wState) {
     is(wsRead) {
       wState := wsSubmit
-      wBuf := io.bankDataIn(rRefillSel)
+      wBuf := bData.read(rRefillSel)
     }
 
     is(wsSubmit) {
@@ -426,7 +445,7 @@ class DCache(config: CacheConfig, verbose: Boolean = false) extends Module {
 
     is(rsRefill) {
       // output bank write enable
-      io.bankWEn(rRefillSel) := VecInit(List.fill(config.lineBankNum)("hf".U))
+      bData.wEn(rRefillSel) := VecInit(List.fill(config.lineBankNum)("hf".U))
       // update control state
       tagMem(fuse(rRefillSel, config.sliceSet(rAddr))) := config.sliceTag(rAddr)
       dirtyMem(rRefillSel) := Mux(
