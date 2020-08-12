@@ -468,5 +468,5 @@ object getLruWidth {
 object DCache extends App {
   (new ChiselStage) execute(args, Seq(ChiselGeneratorAnnotation(
     () =>
-      new DCache(new CacheConfig(wayNum = 2, setWidth = 7, lineBankNum = 16), verbose = false))))
+      new DCache(new CacheConfig(wayNum = 2, setWidth = 7, lineBankNum = 8), verbose = false))))
 }
