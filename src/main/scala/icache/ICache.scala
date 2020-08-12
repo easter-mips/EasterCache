@@ -5,7 +5,7 @@ import chisel3.util._
 import chisel3.stage.{ChiselGeneratorAnnotation, ChiselStage}
 
 import lru.LruMem
-import mem.BlockMem
+import mem.bank_mem
 import types._
 
 class BankData(val config: CacheConfig) extends Bundle {
