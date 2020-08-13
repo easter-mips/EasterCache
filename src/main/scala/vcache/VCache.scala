@@ -31,6 +31,7 @@ class VCache(val depth: Int = 16, val lineBankNum: Int = 8) extends Module {
   val io = IO(new Bundle {
     // cpu interface
     val wReq = Flipped(Decoupled(new WriteReq(lineBankNum)))
+    val rEn = Input(Bool())
     val rAddr = Input(UInt(32.W))
     val rData = Output(Vec(lineBankNum, UInt(32.W)))
     val rHit = Output(Bool())
@@ -53,7 +54,7 @@ class VCache(val depth: Int = 16, val lineBankNum: Int = 8) extends Module {
 
   // input buffering
   val rAddrBuf = RegInit(0.U(32.W))
-  rAddrBuf := io.rAddr
+  rAddrBuf := Mux(io.rEn, io.rAddr, rAddrBuf)
 
   // axi output
   io.axiWrite.awid := 0.U
