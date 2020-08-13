@@ -95,16 +95,14 @@ class DCache(config: CacheConfig, verbose: Boolean = false) extends Module {
     val missCount = Output(UInt(32.W))
     val hitCount = Output(UInt(32.W))
     // axi interface
-    val axiReadAddrOut = Output(new AxiReadAddrOut)
-    val axiReadAddrIn = Input(new AxiReadAddrIn)
-    val axiReadOut = Output(new AxiReadOut)
-    val axiReadIn = Input(new AxiReadIn)
+    val axiRead = new AxiReadInterface
     // victim cache interface
     val vcReady = Input(Bool())
     val vcHit = Input(Bool())
     val vcWAddr = Output(UInt(config.lineAddrWidth.W))
     val vcWData = Output(Vec(config.lineBankNum, UInt(32.W)))
     val vcWValid = Output(Bool())
+    val vcREn = Output(Bool())
     val vcRAddr = Output(UInt(config.lineAddrWidth.W))
     val vcRData = Input(Vec(config.lineBankNum, UInt(32.W)))
   })
@@ -216,17 +214,18 @@ class DCache(config: CacheConfig, verbose: Boolean = false) extends Module {
 
   bData.wEn := VecInit.tabulate(config.wayNum) { _ => VecInit.tabulate(config.lineBankNum) { _ => 0.U } }
   bData.addr := Mux(rState === rsRefill, config.sliceSet(rAddr), dSet)
-  io.axiReadAddrOut.arid := 0.U
-  io.axiReadAddrOut.araddr := rAddr
-  io.axiReadAddrOut.arvalid := 0.U
-  io.axiReadAddrOut.arlen := (config.lineBankNum - 1).U
-  io.axiReadAddrOut.arsize := 2.U
-  io.axiReadAddrOut.arburst := 2.U
-  io.axiReadOut.rready := rState === rsRead
+  io.axiRead.arid := 0.U
+  io.axiRead.araddr := rAddr
+  io.axiRead.arvalid := 0.U
+  io.axiRead.arlen := (config.lineBankNum - 1).U
+  io.axiRead.arsize := 2.U
+  io.axiRead.arburst := 2.U
+  io.axiRead.rready := rState === rsRead
   io.vcWAddr := config.sliceLineAddr(wAddr)
   io.vcWData := wBuf
   io.vcWValid := wState === wsSubmit
   io.vcRAddr := config.sliceLineAddr(io.dAddr)
+  io.vcREn := io.enable
 
   // output handle
   io.rData := 0.U
@@ -261,13 +260,13 @@ class DCache(config: CacheConfig, verbose: Boolean = false) extends Module {
 
   // buffered write request hit axi read
   val bufHitAxiDirect = Wire(Bool())
-  bufHitAxiDirect := wReqValid && wReqBank === rBank && rState === rsRead && io.axiReadIn.rvalid
+  bufHitAxiDirect := wReqValid && wReqBank === rBank && rState === rsRead && io.axiRead.rvalid
 
   val hitAxiBuf = Wire(Bool())
   hitAxiBuf := config.sliceLineAddr(rAddr) === config.sliceLineAddr(io.dAddr) && rState === rsRead && rValid(config.sliceBank(io.dAddr))
   val hitAxiDirect = Wire(Bool())
   hitAxiDirect := config.sliceLineAddr(rAddr) === config.sliceLineAddr(io.dAddr) && rState === rsRead &&
-    config.sliceBank(io.dAddr) === rBank && io.axiReadIn.rvalid && !bufHitAxiDirect
+    config.sliceBank(io.dAddr) === rBank && io.axiRead.rvalid && !bufHitAxiDirect
   // conflicting condition I: cache is refilling data back into BRAM
   val refilling = Wire(Bool())
   refilling := rState === rsRefill
@@ -380,7 +379,7 @@ class DCache(config: CacheConfig, verbose: Boolean = false) extends Module {
   when(io.enable && !actionValid) {
     when(hitAxiDirect) {
       oState := osKnown
-      oKnownData := io.axiReadIn.rdata
+      oKnownData := io.axiRead.rdata
       rDirty := Mux(io.wEn, 1.U, rDirty)
       // update lru
       lruMem.io.visit := rRefillSel
@@ -455,23 +454,23 @@ class DCache(config: CacheConfig, verbose: Boolean = false) extends Module {
           rBuf(wReqBank) := writeWord(rBuf(wReqBank), wReqWStrb, wReqData)
         }
       }.otherwise {
-        io.axiReadAddrOut.arvalid := 1.U
-        rState := Mux(io.axiReadAddrIn.arready, rsRead, rsAddr)
+        io.axiRead.arvalid := 1.U
+        rState := Mux(io.axiRead.arready, rsRead, rsAddr)
       }
     }
 
     is(rsRead) {
       when (bufHitAxiDirect) {
-        rBuf(rBank) := writeWord(io.axiReadIn.rdata, wReqWStrb, wReqData)
+        rBuf(rBank) := writeWord(io.axiRead.rdata, wReqWStrb, wReqData)
         wReqValid := false.B
       } .elsewhen (hitAxiDirect && io.wEn) {
-        rBuf(rBank) := writeWord(io.axiReadIn.rdata, io.wStrb, io.wData)
+        rBuf(rBank) := writeWord(io.axiRead.rdata, io.wStrb, io.wData)
       } .otherwise {
-        rBuf(rBank) := Mux(io.axiReadIn.rvalid, io.axiReadIn.rdata, 0.U)
+        rBuf(rBank) := Mux(io.axiRead.rvalid, io.axiRead.rdata, 0.U)
       }
-      rValid(rBank) := io.axiReadIn.rvalid
-      rBank := Mux(io.axiReadIn.rvalid, rBank + 1.U, rBank)
-      rState := Mux(io.axiReadIn.rlast && io.axiReadIn.rvalid, rsRefill, rsRead)
+      rValid(rBank) := io.axiRead.rvalid
+      rBank := Mux(io.axiRead.rvalid, rBank + 1.U, rBank)
+      rState := Mux(io.axiRead.rlast && io.axiRead.rvalid, rsRefill, rsRead)
     }
 
     is(rsRefill) {

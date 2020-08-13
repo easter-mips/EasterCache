@@ -28,10 +28,11 @@ class ICache(val config: CacheConfig, val transNum: Int) extends Module {
     val inst2Valid = Output(Bool())
     val action = Input(UInt(4.W))
     // interface to AXI ram
-    val axiReadAddrOut = Output(new AxiReadAddrOut)
-    val axiReadAddrIn = Input(new AxiReadAddrIn)
-    val axiReadOut = Output(new AxiReadOut)
-    val axiReadIn = Input(new AxiReadIn)
+//    val axiReadAddrOut = Output(new AxiReadAddrOut)
+//    val axiReadAddrIn = Input(new AxiReadAddrIn)
+//    val axiReadOut = Output(new AxiReadOut)
+//    val axiReadIn = Input(new AxiReadIn)
+    val axiRead = new AxiReadInterface
     // hit stats
     val hitStats = Output(new HitStats)
   })
@@ -107,7 +108,7 @@ class ICache(val config: CacheConfig, val transNum: Int) extends Module {
 
   val axiRValid = Wire(UInt(transNum.W))
   axiRValid := VecInit.tabulate(transNum) { i =>
-    io.axiReadIn.rvalid && io.axiReadIn.rid === i.U
+    io.axiRead.rvalid && io.axiRead.rid === i.U
   }.asUInt
 
   // output state
@@ -136,13 +137,13 @@ class ICache(val config: CacheConfig, val transNum: Int) extends Module {
   io.inst2 := 0.U
   io.inst1Valid := false.B
   io.inst2Valid := false.B
-  io.axiReadAddrOut.arid := addressingSel.pad(4)
-  io.axiReadAddrOut.araddr := rAddr(addressingSel)
-  io.axiReadAddrOut.arvalid := rIsAddressing.asUInt.orR
-  io.axiReadAddrOut.arlen := (config.lineBankNum - 1).U
-  io.axiReadAddrOut.arsize := 2.U
-  io.axiReadAddrOut.arburst := 2.U
-  io.axiReadOut.rready := isState(rsRead).asUInt.orR
+  io.axiRead.arid := addressingSel.pad(4)
+  io.axiRead.araddr := rAddr(addressingSel)
+  io.axiRead.arvalid := rIsAddressing.asUInt.orR
+  io.axiRead.arlen := (config.lineBankNum - 1).U
+  io.axiRead.arsize := 2.U
+  io.axiRead.arburst := 2.U
+  io.axiRead.rready := isState(rsRead).asUInt.orR
   io.hitStats.hitCount := hitCount
   io.hitStats.missCount := missCount
 
@@ -260,7 +261,7 @@ class ICache(val config: CacheConfig, val transNum: Int) extends Module {
     when (hitAxiDirect) {
       io.inst1Valid := true.B
       oState := osKnown1
-      oKnownInst1 := io.axiReadIn.rdata
+      oKnownInst1 := io.axiRead.rdata
       lruMem.io.visit := rRefillWay(hitAxiDirectId)
     } .elsewhen (hitAxiBuf) {
       io.inst1Valid := true.B
@@ -294,14 +295,14 @@ class ICache(val config: CacheConfig, val transNum: Int) extends Module {
   (0 until transNum).foreach { i: Int =>
     switch(rState(i)) {
       is (rsAddressing) {
-        when (i.U === addressingSel && io.axiReadAddrIn.arready) {
+        when (i.U === addressingSel && io.axiRead.arready) {
           rState(i) := rsRead
         }
       }
       is (rsRead) {
-        rBuf(i)(rBank(i)) := io.axiReadIn.rdata
+        rBuf(i)(rBank(i)) := io.axiRead.rdata
         when (axiRValid(i)) {
-          rState(i) := Mux(io.axiReadIn.rlast, rsRefill, rsRead)
+          rState(i) := Mux(io.axiRead.rlast, rsRefill, rsRead)
           rValid(i) := setBit(rValid(i), rBank(i))
           rBank(i) := rBank(i) + 1.U
         }

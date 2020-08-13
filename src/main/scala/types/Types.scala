@@ -7,13 +7,13 @@ import scala.collection.immutable.List
 
 class AxiReadInterface extends Bundle {
   // address channel
-  val arid = Input(UInt(4.W))
-  val araddr = Input(UInt(32.W))
-  val arvalid = Input(Bool())
-  val arlen = Input(UInt(4.W))
-  val arsize = Input(UInt(3.W))
-  val arburst = Input(UInt(2.W))
-  val arready = Output(Bool())
+  val arid = Output(UInt(4.W))
+  val araddr = Output(UInt(32.W))
+  val arvalid = Output(Bool())
+  val arlen = Output(UInt(4.W))
+  val arsize = Output(UInt(3.W))
+  val arburst = Output(UInt(2.W))
+  val arready = Input(Bool())
 
   // read channel
   val rready = Output(Bool())
