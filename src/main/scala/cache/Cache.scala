@@ -52,7 +52,7 @@ class Cache(val settings: CacheSettings) extends Module {
   icache.io.enable := io.iEn
   icache.io.iAddr := io.iAddr
   io.inst1 := icache.io.inst1
-  io.inst2 := icache.io.inst1
+  io.inst2 := icache.io.inst2
   io.inst1Valid := icache.io.inst1Valid
   io.inst2Valid := icache.io.inst2Valid
   icache.io.action := instAction
@@ -87,11 +87,11 @@ class Cache(val settings: CacheSettings) extends Module {
   io.dataRead <> dcache.io.axiRead
   // vcache
   vcache.io.wReq.valid := dcache.io.vcWValid
-  vcache.io.wReq.bits.addr := dcache.io.vcWAddr
+  vcache.io.wReq.bits.addr := Cat(dcache.io.vcWAddr, 0.U((settings.dcacheConfig.bankNumWidth + 2).W))
   vcache.io.wReq.bits.data := dcache.io.vcWData
   dcache.io.vcReady := vcache.io.wReq.ready
   vcache.io.rEn := dcache.io.vcREn
-  vcache.io.rAddr := dcache.io.vcRAddr
+  vcache.io.rAddr := Cat(dcache.io.vcRAddr, 0.U((settings.dcacheConfig.bankNumWidth + 2).W))
   dcache.io.vcRData := vcache.io.rData
   dcache.io.vcHit := vcache.io.rHit
   // axi write
