@@ -344,7 +344,7 @@ class DCache(config: CacheConfig, verbose: Boolean = false) extends Module {
   val actionOk = Wire(Bool())
   actionOk := true.B
 
-  io.dWait := (io.enable && !hit) || (actionValid && actionOk)
+  io.dWait := (io.enable && !hit) || (actionValid && !actionOk)
 
   // invalidate
   when (actionInv) {
