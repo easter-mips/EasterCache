@@ -79,7 +79,7 @@ class HitStats extends Bundle {
   val missCount = UInt(32.W)
 }
 
-class CacheConfig(val wayNum: Int, val setWidth: Int, val lineBankNum: Int = 8) {
+class CacheConfig(val wayNum: Int, val setWidth: Int, val lineBankNum: Int = 8, val transNum: Int = 2) {
   val bankNumWidth = log2Ceil(lineBankNum)
   val tagWidth = 32 - 2 - bankNumWidth - setWidth
   val wayNumWidth = log2Ceil(wayNum)
@@ -90,6 +90,9 @@ class CacheConfig(val wayNum: Int, val setWidth: Int, val lineBankNum: Int = 8) 
   def sliceSet(x: UInt): UInt = x(31 - tagWidth, 32 - tagWidth - setWidth)
   def sliceBank(x: UInt): UInt = x(1 + bankNumWidth, 2)
   def sliceLineAddr(x: UInt): UInt = x(31, bankNumWidth + 2)
+}
+
+class CacheSettings(val icacheConfig: CacheConfig, val dcacheConfig: CacheConfig, val vcacheDepth: Int) {
 }
 
 class MemConfig(val depth: Int, val lineSize: Int) {

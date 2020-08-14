@@ -15,8 +15,8 @@ class BankData(val config: CacheConfig) extends Bundle {
   val wEn = Vec(config.wayNum, Bool())
 }
 
-class ICache(val config: CacheConfig, val transNum: Int) extends Module {
-  val transNumWidth = log2Ceil(transNum)
+class ICache(val config: CacheConfig) extends Module {
+  val transNumWidth = log2Ceil(config.transNum)
 
   val io = IO(new Bundle {
     // interface to CPU
@@ -28,10 +28,6 @@ class ICache(val config: CacheConfig, val transNum: Int) extends Module {
     val inst2Valid = Output(Bool())
     val action = Input(UInt(4.W))
     // interface to AXI ram
-//    val axiReadAddrOut = Output(new AxiReadAddrOut)
-//    val axiReadAddrIn = Input(new AxiReadAddrIn)
-//    val axiReadOut = Output(new AxiReadOut)
-//    val axiReadIn = Input(new AxiReadIn)
     val axiRead = new AxiReadInterface
     // hit stats
     val hitStats = Output(new HitStats)
@@ -80,23 +76,23 @@ class ICache(val config: CacheConfig, val transNum: Int) extends Module {
   // axi state def
   val rsIdle :: rsAddressing :: rsRead :: rsRefill :: Nil = Enum(4)
 
-  val rState = RegInit(VecInit.tabulate(transNum) { _ => rsIdle })
-  val rAddr = RegInit(VecInit.tabulate(transNum) { _ => 0.U(32.W) })
-  val rBank = RegInit(VecInit.tabulate(transNum) { _ => 0.U(config.bankNumWidth.W) })
-  val rBuf = List.fill(transNum) { Mem(config.lineBankNum, UInt(32.W)) }
-  val rValid = RegInit(VecInit.tabulate(transNum) { _ => 0.U(config.lineBankNum.W) })
-  val rRefillWay = RegInit(VecInit.tabulate(transNum) { _ => 0.U(config.wayNumWidth.W) })
-  val rInvalid = RegInit(VecInit.tabulate(transNum) { _ => false.B })
+  val rState = RegInit(VecInit.tabulate(config.transNum) { _ => rsIdle })
+  val rAddr = RegInit(VecInit.tabulate(config.transNum) { _ => 0.U(32.W) })
+  val rBank = RegInit(VecInit.tabulate(config.transNum) { _ => 0.U(config.bankNumWidth.W) })
+  val rBuf = List.fill(config.transNum) { Mem(config.lineBankNum, UInt(32.W)) }
+  val rValid = RegInit(VecInit.tabulate(config.transNum) { _ => 0.U(config.lineBankNum.W) })
+  val rRefillWay = RegInit(VecInit.tabulate(config.transNum) { _ => 0.U(config.wayNumWidth.W) })
+  val rInvalid = RegInit(VecInit.tabulate(config.transNum) { _ => false.B })
 
-  val rBufData = VecInit.tabulate(transNum) { i => VecInit.tabulate(config.lineBankNum) { j => rBuf(i)(j) } }
+  val rBufData = VecInit.tabulate(config.transNum) { i => VecInit.tabulate(config.lineBankNum) { j => rBuf(i)(j) } }
 
-  def isState(s: UInt): Vec[Bool] = VecInit.tabulate(transNum) { i => rState(i) === s }
+  def isState(s: UInt): Vec[Bool] = VecInit.tabulate(config.transNum) { i => rState(i) === s }
 
-  val rIsIdle = Wire(Vec(transNum, Bool()))
+  val rIsIdle = Wire(Vec(config.transNum, Bool()))
   rIsIdle := isState(rsIdle)
-  val rIsAddressing = Wire(Vec(transNum, Bool()))
+  val rIsAddressing = Wire(Vec(config.transNum, Bool()))
   rIsAddressing := isState(rsAddressing)
-  val rIsRefilling = Wire(Vec(transNum, Bool()))
+  val rIsRefilling = Wire(Vec(config.transNum, Bool()))
   rIsRefilling := isState(rsRefill)
 
   val idleSel = Wire(UInt(transNumWidth.W))
@@ -106,8 +102,8 @@ class ICache(val config: CacheConfig, val transNum: Int) extends Module {
   val refillSel = Wire(UInt(transNumWidth.W))
   refillSel := PriorityEncoder(rIsRefilling)
 
-  val axiRValid = Wire(UInt(transNum.W))
-  axiRValid := VecInit.tabulate(transNum) { i =>
+  val axiRValid = Wire(UInt(config.transNum.W))
+  axiRValid := VecInit.tabulate(config.transNum) { i =>
     io.axiRead.rvalid && io.axiRead.rid === i.U
   }.asUInt
 
@@ -189,16 +185,16 @@ class ICache(val config: CacheConfig, val transNum: Int) extends Module {
   val hitWayId = Wire(UInt(config.wayNumWidth.W))
   hitWayId := OHToUInt(hitWays)
   // whether input addr is in a axi transaction
-  val inAxiReads = Wire(UInt(transNum.W))
-  inAxiReads := VecInit.tabulate(transNum) { i =>
+  val inAxiReads = Wire(UInt(config.transNum.W))
+  inAxiReads := VecInit.tabulate(config.transNum) { i =>
     config.sliceLineAddr(io.iAddr) === config.sliceLineAddr(rAddr(i)) &&
       rState(i) =/= rsIdle
   }.asUInt
   val inAxiRead = Wire(Bool())
   inAxiRead := inAxiReads.orR
   // hit axi direct
-  val hitAxiDirects = Wire(UInt(transNum.W))
-  hitAxiDirects := VecInit.tabulate(transNum) { i =>
+  val hitAxiDirects = Wire(UInt(config.transNum.W))
+  hitAxiDirects := VecInit.tabulate(config.transNum) { i =>
     inAxiReads(i) && iBank === rBank(i) && axiRValid(i) && rState(i) === rsRead
   }.asUInt
   val hitAxiDirect = Wire(Bool())
@@ -207,7 +203,7 @@ class ICache(val config: CacheConfig, val transNum: Int) extends Module {
   hitAxiDirectId := PriorityEncoder(hitAxiDirects)
   // hit axi buf
   val hitAxiBufs = Wire(UInt(transNumWidth.W))
-  hitAxiBufs := VecInit.tabulate(transNum) { i =>
+  hitAxiBufs := VecInit.tabulate(config.transNum) { i =>
     inAxiReads(i) && rValid(i)(iBank) && (rState(i) === rsRead || rState(i) === rsRefill)
   }.asUInt
   val hitAxiBuf = Wire(Bool())
@@ -292,7 +288,7 @@ class ICache(val config: CacheConfig, val transNum: Int) extends Module {
   }
 
   // axi read handle
-  (0 until transNum).foreach { i: Int =>
+  (0 until config.transNum).foreach { i: Int =>
     switch(rState(i)) {
       is (rsAddressing) {
         when (i.U === addressingSel && io.axiRead.arready) {
@@ -325,5 +321,5 @@ class ICache(val config: CacheConfig, val transNum: Int) extends Module {
 object ICache extends App {
   new ChiselStage execute(args, Seq(ChiselGeneratorAnnotation(
     () =>
-      new ICache(new CacheConfig(wayNum = 2, setWidth = 7), transNum = 2))))
+      new ICache(new CacheConfig(wayNum = 2, setWidth = 7, transNum = 2)))))
 }
