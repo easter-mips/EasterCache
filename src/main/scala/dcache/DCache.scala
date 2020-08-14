@@ -339,7 +339,7 @@ class DCache(config: CacheConfig, verbose: Boolean = false) extends Module {
   actionInv := io.action(2)
   actionStore := io.action(1)
   actionWB := io.action(0)
-  actionValid := io.action(2, 0).orR
+  actionValid := actionInv || actionWB
 
   val actionOk = Wire(Bool())
   actionOk := true.B
