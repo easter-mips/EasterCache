@@ -278,8 +278,6 @@ class DCache(config: CacheConfig, verbose: Boolean = false) extends Module {
   // hit handle
   val hitWays = Wire(UInt(config.wayNum.W))
   hitWays := VecInit((0 until config.wayNum).map(i => validMem(i)(dSet) && (tagMem(fuse(i.U(config.wayNumWidth.W), dSet)) === dTag))).asUInt
-  val hitWay = Wire(Bool())
-  hitWay := hitWays.orR()
   val hitWayId = Wire(UInt(config.wayNumWidth.W))
   hitWayId := PriorityEncoder(hitWays)
 
@@ -295,12 +293,12 @@ class DCache(config: CacheConfig, verbose: Boolean = false) extends Module {
   // conflicting condition I: cache is refilling data back into BRAM
   val refilling = Wire(Bool())
   refilling := rState === rsRefill
-  // conflicting condition II: requested line is being written back to AXI ram
-  val axiWritingBack = Wire(Bool())
-  axiWritingBack := config.sliceLineAddr(io.dAddr) === config.sliceLineAddr(wAddr) && !axiReady && wNeedWB
+
+  val hitWay = Wire(Bool())
+  hitWay := hitWays.orR() && !refilling
 
   val hit = Wire(Bool())
-  hit := !axiWritingBack && !refilling && (hitAxiDirect || hitAxiBuf || hitWay)
+  hit := hitAxiDirect || hitAxiBuf || hitWay
 
   // count miss & hit
   val isMiss = Wire(Bool())
@@ -322,9 +320,7 @@ class DCache(config: CacheConfig, verbose: Boolean = false) extends Module {
   if (verbose) {
     when(io.enable) {
       printf(p"requested address: ${io.dAddr}\n")
-      when(axiWritingBack) {
-        printf("stall reason: hitted line is being written back\n")
-      }.elsewhen(refilling) {
+      when(refilling) {
         printf("stall reason: cache is refilling data\n")
       }.elsewhen(hitAxiDirect) {
         printf("hit axi direct\n")
@@ -357,53 +353,53 @@ class DCache(config: CacheConfig, verbose: Boolean = false) extends Module {
   val actionOk = Wire(Bool())
   actionOk := true.B
 
-  io.dWait := (io.enable && !hit && !canBuffer) || (actionValid && !actionOk)
+  io.dWait := (io.enable && !hit && !canBuffer) // || (actionValid && !actionOk)
 
   // invalidate
-  when (actionInv) {
-    when (actionAddr === 0.U) { // hit addressing
-      when (hitAxiDirect || hitAxiBuf) {
-        rInvalid := true.B
-      } .elsewhen (hitWay) {
-        validMem(hitWayId) := clearBit(validMem(hitWayId), dSet)
-      }
-    } .otherwise { // index addressing
-      val invWayId = Wire(UInt(config.wayNumWidth.W))
-      invWayId := dTag(config.wayNumWidth - 1, 0)
-      validMem(invWayId) := clearBit(validMem(invWayId), dSet)
-    }
-  }
+//  when (actionInv) {
+//    when (actionAddr === 0.U) { // hit addressing
+//      when (hitAxiDirect || hitAxiBuf) {
+//        rInvalid := true.B
+//      } .elsewhen (hitWay) {
+//        validMem(hitWayId) := clearBit(validMem(hitWayId), dSet)
+//      }
+//    } .otherwise { // index addressing
+//      val invWayId = Wire(UInt(config.wayNumWidth.W))
+//      invWayId := dTag(config.wayNumWidth - 1, 0)
+//      validMem(invWayId) := clearBit(validMem(invWayId), dSet)
+//    }
+//  }
   // write back
-  when (actionWB) {
-    when (actionAddr === 0.U) { // hit addressing
-      when ((hitAxiDirect || hitAxiBuf) && rDirty) {
-        // need write back
-        rWB := true.B
-      } .elsewhen(hitWay) {
-        when (wState === wsIdle && rState =/= rsRefill) {
-          wState := wsRead
-          wNeedWB := true.B
-          wAddr := Cat(tagMem(fuse(hitWayId, dSet)), Cat(dSet, 0.U(5.W)))
-        } .otherwise {
-          actionOk := false.B
-        }
-      }
-    } .otherwise { // index addressing
-      val invWayId = Wire(UInt(config.wayNumWidth.W))
-      invWayId := dTag(config.wayNumWidth - 1, 0)
-      when (validMem(invWayId)(dSet) && dirtyMem(invWayId)(dSet)) { // need write back
-        when (wState === wsIdle && rState =/= rsRefill) {
-          wState := wsRead
-          wNeedWB := true.B
-          wAddr := Cat(tagMem(fuse(invWayId, dSet)), Cat(dSet, 0.U(5.W)))
-        } .otherwise {
-          actionOk := false.B
-        }
-      }
-    }
-  }
+//  when (actionWB) {
+//    when (actionAddr === 0.U) { // hit addressing
+//      when ((hitAxiDirect || hitAxiBuf) && rDirty) {
+//        // need write back
+//        rWB := true.B
+//      } .elsewhen(hitWay) {
+//        when (wState === wsIdle && rState =/= rsRefill) {
+//          wState := wsRead
+//          wNeedWB := true.B
+//          wAddr := Cat(tagMem(fuse(hitWayId, dSet)), Cat(dSet, 0.U(5.W)))
+//        } .otherwise {
+//          actionOk := false.B
+//        }
+//      }
+//    } .otherwise { // index addressing
+//      val invWayId = Wire(UInt(config.wayNumWidth.W))
+//      invWayId := dTag(config.wayNumWidth - 1, 0)
+//      when (validMem(invWayId)(dSet) && dirtyMem(invWayId)(dSet)) { // need write back
+//        when (wState === wsIdle && rState =/= rsRefill) {
+//          wState := wsRead
+//          wNeedWB := true.B
+//          wAddr := Cat(tagMem(fuse(invWayId, dSet)), Cat(dSet, 0.U(5.W)))
+//        } .otherwise {
+//          actionOk := false.B
+//        }
+//      }
+//    }
+//  }
 
-  when(io.enable && !axiWritingBack && !refilling && !actionValid) {
+  when(io.enable) {
     when(hitAxiDirect) {
       oState := osKnown
 //      oKnownData := readWord(io.axiReadIn.rdata, io.dAddr, io.dSize)
