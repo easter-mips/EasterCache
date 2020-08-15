@@ -43,8 +43,8 @@ class VCache(val depth: Int = 16, val lineBankNum: Int = 8) extends Module {
   val itemAddr = RegInit(VecInit.tabulate(depth) { _ => 0.U(32.W) })
   val itemData = RegInit(VecInit.tabulate(depth) { _ => VecInit.tabulate(lineBankNum) { _ => 0.U(32.W) } })
   val itemValid = RegInit(0.U(depth.W))
-  val pEnq = RegInit(0.U(depthWidth))
-  val pDeq = RegInit(0.U(depthWidth))
+  val pEnq = RegInit(0.U(depthWidth.W))
+  val pDeq = RegInit(0.U(depthWidth.W))
   val qFull = RegInit(false.B)
 
   // axi write state
