@@ -102,6 +102,6 @@ object Cache extends App {
   new ChiselStage execute(args, Seq(ChiselGeneratorAnnotation(
     () =>
       new Cache(new CacheSettings(
-        new CacheConfig(wayNum = 2, setWidth = 7), new CacheConfig(wayNum = 2, setWidth = 7), vcacheDepth = 16
+        new CacheConfig(wayNum = 2, setWidth = 7, transNum = 1), new CacheConfig(wayNum = 2, setWidth = 7), vcacheDepth = 16
       )))))
 }

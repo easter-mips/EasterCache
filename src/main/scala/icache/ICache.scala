@@ -16,7 +16,7 @@ class BankData(val config: CacheConfig) extends Bundle {
 }
 
 class ICache(val config: CacheConfig) extends Module {
-  val transNumWidth = log2Ceil(config.transNum)
+  val transNumWidth = if (config.transNum > 1) log2Ceil(config.transNum) else 1
 
   val io = IO(new Bundle {
     // interface to CPU
@@ -202,7 +202,7 @@ class ICache(val config: CacheConfig) extends Module {
   val hitAxiDirectId = Wire(UInt(transNumWidth.W))
   hitAxiDirectId := PriorityEncoder(hitAxiDirects)
   // hit axi buf
-  val hitAxiBufs = Wire(UInt(transNumWidth.W))
+  val hitAxiBufs = Wire(UInt(config.transNum.W))
   hitAxiBufs := VecInit.tabulate(config.transNum) { i =>
     inAxiReads(i) && rValid(i)(iBank) && (rState(i) === rsRead || rState(i) === rsRefill)
   }.asUInt
@@ -321,5 +321,5 @@ class ICache(val config: CacheConfig) extends Module {
 object ICache extends App {
   new ChiselStage execute(args, Seq(ChiselGeneratorAnnotation(
     () =>
-      new ICache(new CacheConfig(wayNum = 2, setWidth = 7, transNum = 2)))))
+      new ICache(new CacheConfig(wayNum = 2, setWidth = 7, transNum = 1)))))
 }
