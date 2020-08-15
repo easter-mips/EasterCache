@@ -248,7 +248,7 @@ class DCache(config: CacheConfig, verbose: Boolean = false) extends Module {
   io.vcWAddr := config.sliceLineAddr(wAddr)
   io.vcWData := wBuf
   io.vcWValid := wState === wsSubmit
-  io.vcRAddr := config.sliceLineAddr(io.dAddr)
+  io.vcRAddr := Mux(rState === rsAddr, config.sliceLineAddr(rAddr), config.sliceLineAddr(io.dAddr))
 
   // output handle
   io.rData := 0.U
@@ -476,6 +476,12 @@ class DCache(config: CacheConfig, verbose: Boolean = false) extends Module {
         rState := rsRefill
         rValid := VecInit(List.fill(lineBankNum)(true.B))
         rBuf := io.vcRData
+
+        // handle buffered request valid
+        wReqValid := false.B
+        when (wReqValid) {
+          rBuf(wReqBank) := writeWord(rBuf(wReqBank), wReqWStrb, wReqData)
+        }
       }.otherwise {
         io.axiReadAddrOut.arvalid := 1.U
         rState := Mux(io.axiReadAddrIn.arready, rsRead, rsAddr)
