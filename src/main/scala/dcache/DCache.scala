@@ -152,7 +152,7 @@ class DCache(config: CacheConfig, verbose: Boolean = false) extends Module {
   // victim cache write state
   val wsIdle :: wsRead :: wsSubmit :: Nil = Enum(3)
   // output state
-  val osNone :: osKnown :: osRead :: Nil = Enum(3)
+  val osKnown :: osRead :: Nil = Enum(2)
 
   // control state
   /**
@@ -226,7 +226,7 @@ class DCache(config: CacheConfig, verbose: Boolean = false) extends Module {
   dBank := config.sliceBank(io.dAddr)
 
   // output states
-  val oState = RegInit(osNone)
+  val oState = RegInit(osKnown)
   val oKnownData = RegInit(0.U(32.W))
   val oReadWay = RegInit(0.U(config.wayNumWidth.W))
   val oReadBank = RegInit(0.U(bankSelWidth.W))
@@ -251,16 +251,7 @@ class DCache(config: CacheConfig, verbose: Boolean = false) extends Module {
   io.vcRAddr := Mux(rState === rsAddr, config.sliceLineAddr(rAddr), config.sliceLineAddr(io.dAddr))
 
   // output handle
-  io.rData := 0.U
-  switch(oState) {
-    is(osKnown) {
-      io.rData := oKnownData
-    }
-    is(osRead) {
-//      io.rData := readWord(io.bankDataIn(oReadWay)(oReadBank), oReadAddr, oReadSize)
-      io.rData := io.bankDataIn(oReadWay)(oReadBank)
-    }
-  }
+  io.rData := Mux(oState === osKnown, oKnownData, io.bankDataIn(oReadWay)(oReadBank))
 
   // bank write data
   val hitBankOut = Wire(Vec(lineBankNum, UInt(32.W)))
